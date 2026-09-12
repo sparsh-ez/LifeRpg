@@ -13,16 +13,18 @@ export async function GET(
 
   const { id } = await params;
   try {
-    const [activeSession, presence, leaderboard] = await Promise.all([
+    const [activeSession, presence, leaderboard, weeklyTotal] = await Promise.all([
       RpgService.getActiveStudySession(user.id, id),
       RpgService.getGroupStudyPresence(id),
       RpgService.getGroupLeaderboard(id),
+      RpgService.getGroupWeeklyStudyTotal(id),
     ]);
 
     return NextResponse.json({
       activeSession,
       presence,
       leaderboard,
+      weeklyTotal,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch study data';

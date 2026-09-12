@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Quest, QuestCategory, QuestDifficulty } from '@/types/rpg';
 import {
   Brain,
@@ -23,6 +24,7 @@ import { playQuestConquerSound } from '@/lib/audio/sfx';
 interface QuestCardProps {
   quest: Quest;
   onConquer: (questId: string) => Promise<void>;
+  onRecommit?: (questId: string) => Promise<void>;
   onEdit?: (quest: Quest) => void;
   onDelete?: (questId: string) => void;
 }
@@ -91,9 +93,16 @@ const DIFFICULTY_CONFIG: Record<
   },
 };
 
-export function QuestCard({ quest, onConquer, onEdit, onDelete }: QuestCardProps) {
+export function QuestCard({ quest, onConquer, onRecommit, onEdit, onDelete }: QuestCardProps) {
   const [conquering, setConquering] = useState(false);
+  const [recommitting, setRecommitting] = useState(false);
+  const [confirmRecommit, setConfirmRecommit] = useState(false);
   const [showSuccessGlow, setShowSuccessGlow] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const cat = CATEGORY_CONFIG[quest.category] || CATEGORY_CONFIG.Discipline;
   const diff = DIFFICULTY_CONFIG[quest.difficulty] || DIFFICULTY_CONFIG.Easy;
@@ -125,7 +134,7 @@ export function QuestCard({ quest, onConquer, onEdit, onDelete }: QuestCardProps
     <div
       className={`group relative bg-[#101216] border rounded-2xl p-4 sm:p-5 shadow-lg transition-all duration-200 ${
         quest.completed
-          ? 'border-[#272B32]/60 opacity-60 bg-[#0c0d10]'
+          ? 'border-[#272B32]/80 bg-[#0c0d10]/95 hover:border-[#383e49]'
           : showSuccessGlow
           ? 'border-[#C8FF3D] ring-2 ring-[#C8FF3D]/40 shadow-[0_0_20px_rgba(200,255,61,0.25)]'
           : 'border-[#272B32] hover:border-[#383e49] hover:-translate-y-0.5'
@@ -247,9 +256,26 @@ export function QuestCard({ quest, onConquer, onEdit, onDelete }: QuestCardProps
 
             {/* Complete action */}
             {quest.completed ? (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#08090B] border border-[#272B32] text-[#8B9099] text-xs font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#C8FF3D]" />
-                <span>{isDaily ? 'Completed Today' : 'Quest Conquered'}</span>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#08090B] border border-[#272B32] text-[#8B9099] text-xs font-semibold uppercase tracking-wider">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#C8FF3D]" />
+                  <span>QUEST CONQUERED</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setConfirmRecommit(true)}
+                  disabled={recommitting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#16191F] hover:bg-amber-500/10 border border-[#272B32] hover:border-amber-500/40 text-[#8B9099] hover:text-amber-400 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm hover:shadow-[0_0_12px_rgba(245,158,11,0.2)] active:scale-95 disabled:opacity-50"
+                  title="Undo accidental completion and restore quest"
+                >
+                  {recommitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  ) : (
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-400 stroke-[2.5]" />
+                  )}
+                  <span>RECOMMIT</span>
+                </button>
               </div>
             ) : (
               <button
@@ -274,6 +300,92 @@ export function QuestCard({ quest, onConquer, onEdit, onDelete }: QuestCardProps
           </div>
         </div>
       </div>
+
+      {/* Recommit Confirmation Dialog (Rendered via Portal to ensure full viewport centering & avoid stacking context/opacity issues) */}
+      {confirmRecommit && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !recommitting) {
+              setConfirmRecommit(false);
+            }
+          }}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-[#101216] border border-[#272B32] p-6 sm:p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                <RotateCcw className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-heading font-black text-[#F2F2F0] tracking-wider uppercase">
+                  RECOMMIT QUEST?
+                </h3>
+                <p className="text-xs text-[#8B9099] truncate mt-0.5 font-mono">
+                  &ldquo;{quest.title}&rdquo;
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#16191F] border border-[#272B32] p-4 text-sm text-[#D1D5DB] leading-relaxed">
+              This will reverse the rewards from this completion and return the quest to your active board.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmRecommit(false)}
+                disabled={recommitting}
+                className="px-4 py-2.5 rounded-xl bg-[#16191F] hover:bg-[#20252e] border border-[#272B32] hover:border-[#383e49] text-xs font-mono font-bold text-[#8B9099] hover:text-[#F2F2F0] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setRecommitting(true);
+                  try {
+                    if (onRecommit) {
+                      await onRecommit(quest.id);
+                    } else {
+                      const res = await fetch(`/api/quests/${quest.id}/recommit`, {
+                        method: 'POST',
+                      });
+                      if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error || 'Failed to recommit quest');
+                      }
+                      window.location.reload();
+                    }
+                    setConfirmRecommit(false);
+                  } catch {
+                    // Handled by caller toast/error
+                  } finally {
+                    setRecommitting(false);
+                  }
+                }}
+                disabled={recommitting}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-[#08090B] text-xs font-heading font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_25px_rgba(245,158,11,0.45)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {recommitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Recommitting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>RECOMMIT QUEST</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

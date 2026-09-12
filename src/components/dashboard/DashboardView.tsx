@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Character,
@@ -16,6 +16,7 @@ import { QuestFormModal } from '@/components/quests/QuestFormModal';
 import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { RankUpModal } from '@/components/modals/RankUpModal';
 import { getCurrentBadge } from '@/lib/rpg/badges';
+import { createClient } from '@/lib/supabase/client';
 import {
   Plus,
   Zap,
@@ -51,6 +52,8 @@ interface WeeklyMetricsData {
   xpEarned: number;
   goldEarned: number;
   studyHours: number;
+  studyMinutes?: number;
+  formattedStudyTime?: string;
 }
 
 interface DashboardViewProps {
@@ -68,13 +71,14 @@ export function DashboardView({
   initialQuests,
   initialGroups = [],
   initialRecentActivity = [],
-  initialWeeklyMetrics = { questsCompleted: 0, xpEarned: 0, goldEarned: 0, studyHours: 0 },
+  initialWeeklyMetrics = { questsCompleted: 0, xpEarned: 0, goldEarned: 0, studyHours: 0, formattedStudyTime: '0m' },
 }: DashboardViewProps) {
   const [character, setCharacter] = useState<Character>(initialCharacter);
   const [quests, setQuests] = useState<Quest[]>(initialQuests);
   const [groups, setGroups] = useState<Group[]>(initialGroups);
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>(initialRecentActivity);
   const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyMetricsData>(initialWeeklyMetrics);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
@@ -96,6 +100,9 @@ export function DashboardView({
 
   const currentBadge = getCurrentBadge(character.current_streak);
 
+  // Primary active squad (if joined)
+  const primaryGroup = groups.length > 0 ? groups[0] : null;
+
   // Dynamic greeting based on current local time
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -107,9 +114,10 @@ export function DashboardView({
 
   const refreshState = async () => {
     try {
-      const [charRes, questsRes] = await Promise.all([
+      const [charRes, questsRes, groupsRes] = await Promise.all([
         fetch('/api/character'),
         fetch('/api/quests'),
+        fetch('/api/groups'),
       ]);
       if (charRes.ok) {
         const charData = await charRes.json();
@@ -119,8 +127,171 @@ export function DashboardView({
         const questsData = await questsRes.json();
         setQuests(questsData.quests);
       }
+      if (groupsRes.ok) {
+        const groupsData = await groupsRes.json();
+        setGroups(groupsData.groups);
+      }
     } catch {
       // Non-blocking background refresh
+    }
+  };
+
+  // Group-scoped realtime listener for primary squad
+  useEffect(() => {
+    if (!primaryGroup?.id) return;
+
+    const supabase = createClient();
+    const channelName = `group:${primaryGroup.id}`;
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'study_sessions',
+          filter: `group_id=eq.${primaryGroup.id}`,
+        },
+        () => {
+          refreshState();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'group_quests',
+          filter: `group_id=eq.${primaryGroup.id}`,
+        },
+        () => {
+          refreshState();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'group_members',
+          filter: `group_id=eq.${primaryGroup.id}`,
+        },
+        () => {
+          refreshState();
+        }
+      )
+      .on('broadcast', { event: 'group_sync' }, () => {
+        refreshState();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [primaryGroup?.id]);
+
+  // Automatic midnight UTC boundary detector
+  useEffect(() => {
+    let lastUtcDay = new Date().toISOString().split('T')[0];
+
+    const checkDateBoundary = async () => {
+      const currentUtcDay = new Date().toISOString().split('T')[0];
+      if (currentUtcDay !== lastUtcDay) {
+        lastUtcDay = currentUtcDay;
+        await refreshState();
+      }
+    };
+
+    const intervalId = setInterval(checkDateBoundary, 15000);
+
+    const now = new Date();
+    const nextMidnightUtc = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + 1,
+      0, 0, 1, 0
+    ));
+    const msUntilMidnight = Math.max(1000, nextMidnightUtc.getTime() - now.getTime());
+    const timerId = setTimeout(() => {
+      checkDateBoundary();
+    }, msUntilMidnight);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timerId);
+    };
+  }, []);
+
+  const handleRecommitQuest = async (questId: string) => {
+    try {
+      const res = await fetch(`/api/quests/${questId}/recommit`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to recommit quest');
+      }
+      // Remove from recentActivity if present
+      setRecentActivity((prev) => prev.filter((item) => !item.id.startsWith(questId)));
+      // Immediately restore quest to ACTIVE state
+      setQuests((prev) =>
+        prev.map((q) => (q.id === questId ? { ...q, completed: false, is_completed_today: false } : q))
+      );
+      // Recommit notification toast
+      setToastMessage('QUEST RECOMMITTED');
+      setTimeout(() => setToastMessage(null), 3500);
+      // Authoritative state refresh
+      await refreshState();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to recommit quest';
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3500);
+    }
+  };
+
+  const handleClearCompletedQuests = async (targetQuests?: Quest[]) => {
+    const questsToClear = targetQuests || visibleCompletedQuests;
+    const idsToClear = questsToClear.map((q) => q.id);
+    if (idsToClear.length === 0) return;
+
+    try {
+      const res = await fetch('/api/quests/clear-completed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quest_ids: idsToClear }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to clear completed quests');
+      }
+
+      // Immediately update state: ONE_TIME quests are removed, DAILY quests return to active
+      setQuests((prev) =>
+        prev
+          .filter((q) => !idsToClear.includes(q.id) || q.quest_type === 'DAILY')
+          .map((q) =>
+            idsToClear.includes(q.id) && q.quest_type === 'DAILY'
+              ? { ...q, completed: false, is_completed_today: false }
+              : q
+          )
+      );
+
+      // Clean up recentActivity for cleared quests (destructive clear)
+      setRecentActivity((prev) =>
+        prev.filter((item) => !idsToClear.some((id) => item.id.startsWith(id)))
+      );
+
+      setToastMessage('COMPLETED BOARD CLEARED');
+      setTimeout(() => setToastMessage(null), 3000);
+
+      // Refresh authoritative state from database
+      await refreshState();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to clear completed quests';
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3500);
     }
   };
 
@@ -216,20 +387,27 @@ export function DashboardView({
     await refreshState();
   };
 
-  // Filter quests
-  const filteredQuests = quests.filter((q) => {
-    if (filterType === 'COMPLETED') return q.completed;
-    if (filterType === 'DAILY') return q.quest_type === 'DAILY' && !q.completed;
-    if (filterType === 'ONE_TIME') return q.quest_type !== 'DAILY' && !q.completed;
-    // ALL: show active first, then completed at bottom
+  // Active quests matching filter (primary board view)
+  const activeQuests = quests.filter((q) => {
+    if (q.completed) return false;
+    if (filterType === 'DAILY') return q.quest_type === 'DAILY';
+    if (filterType === 'ONE_TIME') return q.quest_type === 'ONE_TIME';
+    if (filterType === 'COMPLETED') return false;
     return true;
   });
 
-  const activeQuests = quests.filter((q) => !q.completed);
-  const completedTodayCount = quests.filter((q) => q.completed).length;
+  // Completed today quests matching filter
+  const completedQuestsMatchingFilter = quests.filter((q) => {
+    if (!q.completed) return false;
+    if (filterType === 'DAILY') return q.quest_type === 'DAILY';
+    if (filterType === 'ONE_TIME') return q.quest_type === 'ONE_TIME';
+    return true; // for ALL and COMPLETED
+  });
 
-  // Primary active squad (if joined)
-  const primaryGroup = groups.length > 0 ? groups[0] : null;
+  // Visible completed quests (server-authoritative)
+  const visibleCompletedQuests = completedQuestsMatchingFilter;
+
+  const completedTodayCount = quests.filter((q) => q.completed).length;
 
   // Attributes data
   const attributes = [
@@ -265,6 +443,14 @@ export function DashboardView({
 
   return (
     <div className="relative min-h-screen pb-12">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-[#101216] border border-[#C8FF3D] text-[#C8FF3D] text-xs font-mono font-bold shadow-2xl animate-in slide-in-from-top-3 flex items-center gap-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. HERO COMPOSITION: ATMOSPHERIC RPG CHARACTER & PROGRESSION               */}
       {/* ========================================================================= */}
@@ -473,7 +659,7 @@ export function DashboardView({
                 <div className="flex items-center justify-between text-[10px] font-mono text-[#8B9099] pt-2 border-t border-[#272B32]">
                   <span>{primaryGroup.member_count || 1} MEMBERS</span>
                   <span className="text-[#C8FF3D] font-bold">
-                    {weeklyMetrics.studyHours}h / 50h THIS WEEK
+                    {weeklyMetrics.formattedStudyTime || (weeklyMetrics.studyHours > 0 ? `${weeklyMetrics.studyHours}h` : '0m')} / 50h THIS WEEK
                   </span>
                 </div>
                 <Link
@@ -629,7 +815,7 @@ export function DashboardView({
                 <div className="p-2.5 rounded-xl bg-[#16191F] border border-[#272B32]">
                   <div className="text-[10px] font-mono text-[#8B9099] uppercase">Study Time</div>
                   <div className="text-lg font-heading font-black text-[#A855F7] mt-0.5">
-                    {weeklyMetrics.studyHours}h
+                    {weeklyMetrics.formattedStudyTime || (weeklyMetrics.studyHours > 0 ? `${weeklyMetrics.studyHours}h` : '0m')}
                   </div>
                 </div>
               )}
@@ -696,47 +882,158 @@ export function DashboardView({
             </div>
           </div>
 
-          {/* Quests List (Real DB data, exact titles) */}
-          {filteredQuests.length === 0 ? (
-            <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-8 sm:p-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-heading font-black text-[#F2F2F0]">
-                MISSION BOARD CLEAR
-              </h3>
-              <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
-                {filterType === 'DAILY'
-                  ? 'No daily rituals scheduled today. Daily rituals reset every midnight UTC.'
-                  : filterType === 'COMPLETED'
-                  ? 'No completed quests yet. Conquering tasks awards XP, Gold, and Attributes.'
-                  : 'Your quest board is currently empty. Forge a new quest to start gaining real-life XP.'}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingQuest(null);
-                  setIsModalOpen(true);
-                }}
-                className="mt-4 px-4 py-2 rounded-xl bg-[#16191F] hover:bg-[#1f232c] border border-[#272B32] text-[#C8FF3D] text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" /> Forge Quest
-              </button>
+          {/* Quests Display */}
+          {filterType === 'COMPLETED' ? (
+            /* COMPLETED FILTER VIEW */
+            <div className="space-y-3">
+              {visibleCompletedQuests.length > 0 && (
+                <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-[#101216] border border-[#272B32]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-heading font-black tracking-wider text-[#8B9099] uppercase">
+                      COMPLETED TODAY
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/25">
+                      {visibleCompletedQuests.length} CONQUERED
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleClearCompletedQuests(visibleCompletedQuests)}
+                    className="px-2.5 py-1 rounded-lg bg-[#16191F] hover:bg-[#20252e] border border-[#272B32] hover:border-[#383e49] text-[11px] font-mono font-bold text-[#8B9099] hover:text-[#F2F2F0] transition-colors cursor-pointer"
+                    title="Clear completed quests from current board view"
+                  >
+                    CLEAR
+                  </button>
+                </div>
+              )}
+
+              {visibleCompletedQuests.length === 0 ? (
+                <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-8 sm:p-12 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-heading font-black text-[#F2F2F0]">
+                    NO COMPLETED QUESTS TODAY
+                  </h3>
+                  <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
+                    No quests conquered yet today. Complete objectives to gain XP, Gold, and Attributes.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {visibleCompletedQuests.map((quest) => (
+                    <QuestCard
+                      key={quest.id}
+                      quest={quest}
+                      onConquer={handleConquerQuest}
+                      onRecommit={handleRecommitQuest}
+                      onEdit={(q) => {
+                        setEditingQuest(q);
+                        setIsModalOpen(true);
+                      }}
+                      onDelete={handleDeleteQuest}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredQuests.map((quest) => (
-                <QuestCard
-                  key={quest.id}
-                  quest={quest}
-                  onConquer={handleConquerQuest}
-                  onEdit={(q) => {
-                    setEditingQuest(q);
-                    setIsModalOpen(true);
-                  }}
-                  onDelete={handleDeleteQuest}
-                />
-              ))}
+            /* ALL / DAILY / ONE_TIME VIEWS */
+            <div className="space-y-4">
+              {activeQuests.length === 0 && visibleCompletedQuests.length === 0 ? (
+                <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-8 sm:p-12 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-heading font-black text-[#F2F2F0]">
+                    MISSION BOARD CLEAR
+                  </h3>
+                  <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
+                    {filterType === 'DAILY'
+                      ? 'No daily rituals scheduled today. Daily rituals reset every midnight UTC.'
+                      : filterType === 'ONE_TIME'
+                      ? 'No one-time quests pending in this view.'
+                      : 'Your quest board has no pending objectives in this view.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingQuest(null);
+                      setIsModalOpen(true);
+                    }}
+                    className="mt-4 px-4 py-2 rounded-xl bg-[#16191F] hover:bg-[#1f232c] border border-[#272B32] text-[#C8FF3D] text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Forge Quest
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Primary Active Quests */}
+                  {activeQuests.length > 0 ? (
+                    <div className="space-y-3">
+                      {activeQuests.map((quest) => (
+                        <QuestCard
+                          key={quest.id}
+                          quest={quest}
+                          onConquer={handleConquerQuest}
+                          onRecommit={handleRecommitQuest}
+                          onEdit={(q) => {
+                            setEditingQuest(q);
+                            setIsModalOpen(true);
+                          }}
+                          onDelete={handleDeleteQuest}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 rounded-xl bg-[#101216]/60 border border-[#272B32] text-center">
+                      <p className="text-xs text-[#8B9099] font-mono">
+                        All objectives in this view conquered today!
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Secondary Completed Today Section */}
+                  {visibleCompletedQuests.length > 0 && (
+                    <div className="mt-5 pt-4 border-t border-[#272B32]/70 space-y-3">
+                      <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-[#101216]/90 border border-[#272B32]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-heading font-black tracking-wider text-[#8B9099] uppercase">
+                            COMPLETED TODAY
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/25">
+                            {visibleCompletedQuests.length} CONQUERED
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleClearCompletedQuests(visibleCompletedQuests)}
+                          className="px-2.5 py-1 rounded-lg bg-[#16191F] hover:bg-[#20252e] border border-[#272B32] hover:border-[#383e49] text-[11px] font-mono font-bold text-[#8B9099] hover:text-[#F2F2F0] transition-colors cursor-pointer"
+                          title="Remove completed quests from current board view"
+                        >
+                          CLEAR
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {visibleCompletedQuests.map((quest) => (
+                          <QuestCard
+                            key={quest.id}
+                            quest={quest}
+                            onConquer={handleConquerQuest}
+                            onRecommit={handleRecommitQuest}
+                            onEdit={(q) => {
+                              setEditingQuest(q);
+                              setIsModalOpen(true);
+                            }}
+                            onDelete={handleDeleteQuest}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

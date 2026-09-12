@@ -119,31 +119,67 @@ export class RpgService {
       throw new Error(`Failed to fetch quests: ${questsError.message}`);
     }
 
-    // Determine today's completions for daily quests (UTC server date)
+    // Determine today's completions for daily and one-time quests (UTC server date)
     const startOfTodayUtc = new Date();
     startOfTodayUtc.setUTCHours(0, 0, 0, 0);
 
-    const { data: todayCompletions } = await supabase
+    const { data: todayCompletions, error: completionsError } = await supabase
       .from('quest_completions')
-      .select('quest_id')
+      .select('quest_id, completed_at')
       .eq('user_id', userId)
+      .neq('recommitted', true)
       .gte('completed_at', startOfTodayUtc.toISOString());
+
+    if (completionsError) {
+      throw new Error(`Failed to fetch completions: ${completionsError.message}`);
+    }
 
     const completedTodayQuestIds = new Set((todayCompletions || []).map((c) => c.quest_id));
 
-    return (questsData || []).map((q) => {
-      const isDaily = q.quest_type === 'DAILY';
-      const isCompletedToday = isDaily
-        ? completedTodayQuestIds.has(q.id)
-        : Boolean(q.completed);
+    const boardQuests: Quest[] = [];
 
-      return {
-        ...q,
-        quest_type: (q.quest_type as QuestType) || 'ONE_TIME',
-        is_completed_today: isCompletedToday,
-        completed: isDaily ? isCompletedToday : Boolean(q.completed),
-      } as Quest;
-    });
+    for (const q of questsData || []) {
+      const isDaily = q.quest_type === 'DAILY';
+
+      if (isDaily) {
+        // Daily quest: active if no completion today; completed if completed today
+        const isCompletedToday = completedTodayQuestIds.has(q.id);
+        boardQuests.push({
+          ...q,
+          quest_type: 'DAILY',
+          is_completed_today: isCompletedToday,
+          completed: isCompletedToday,
+        } as Quest);
+      } else {
+        // ONE_TIME quest:
+        if (!q.completed) {
+          // Active pending quest
+          boardQuests.push({
+            ...q,
+            quest_type: 'ONE_TIME',
+            is_completed_today: false,
+            completed: false,
+          } as Quest);
+        } else {
+          // Check if conquered during current UTC calendar day
+          const completedAtTime = q.completed_at ? new Date(q.completed_at).getTime() : 0;
+          const isCompletedToday =
+            completedAtTime >= startOfTodayUtc.getTime() || completedTodayQuestIds.has(q.id);
+
+          if (isCompletedToday) {
+            boardQuests.push({
+              ...q,
+              quest_type: 'ONE_TIME',
+              is_completed_today: true,
+              completed: true,
+            } as Quest);
+          }
+          // ONE_TIME quests completed before today do NOT appear on the Quest Board.
+        }
+      }
+    }
+
+    return boardQuests;
   }
 
   /**
@@ -275,6 +311,146 @@ export class RpgService {
     }
 
     return data as QuestCompletionResult;
+  }
+
+  /**
+   * Recommit / Undo Accidental Quest Completion (Server-authoritative reversal RPC)
+   */
+  static async recommitQuest(
+    userId: string,
+    questId: string
+  ): Promise<{
+    success: boolean;
+    quest_id: string;
+    quest_type: QuestType;
+    xp_reversed: number;
+    gold_reversed: number;
+    aura_reversed: number;
+    attribute_name: string;
+    attribute_points_reversed: number;
+    new_total_xp: number;
+    new_level: number;
+    new_streak: number;
+    current_badge: string;
+  }> {
+    const supabase = await createServerSupabase();
+
+    const { data, error } = await supabase.rpc('recommit_quest', {
+      p_quest_id: questId,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  /**
+   * Destructive CLEAR Completed Quests (Server-Authoritative)
+   * - ONE_TIME completed quests: deletes completion records and the quest itself from public.quests.
+   * - DAILY completed quests: deletes today's completion record and resets quest to ACTIVE (completed = false, completed_at = NULL).
+   * - Does NOT modify character XP, Gold, Aura, Attributes, Streak, or Badges.
+   */
+  static async clearCompletedQuests(
+    userId: string,
+    questIds?: string[]
+  ): Promise<{
+    success: boolean;
+    one_time_deleted: number;
+    daily_reset: number;
+    completions_deleted: number;
+  }> {
+    const supabase = await createServerSupabase();
+
+    // 1. Attempt PostgreSQL stored procedure
+    try {
+      const { data, error } = await supabase.rpc('clear_completed_quests', {
+        p_quest_ids: questIds && questIds.length > 0 ? questIds : null,
+      });
+
+      if (!error && data) {
+        return data;
+      }
+    } catch {
+      // Fallback below
+    }
+
+    // 2. Direct server-authoritative query fallback
+    const startOfTodayUtc = new Date();
+    startOfTodayUtc.setUTCHours(0, 0, 0, 0);
+
+    // Fetch user's eligible completed quests
+    let query = supabase
+      .from('quests')
+      .select('id, quest_type, completed')
+      .eq('user_id', userId);
+
+    if (questIds && questIds.length > 0) {
+      query = query.in('id', questIds);
+    }
+
+    const { data: questsToProcess, error: qErr } = await query;
+    if (qErr || !questsToProcess) {
+      throw new Error(`Failed to process quests for clearance: ${qErr?.message}`);
+    }
+
+    let oneTimeDeleted = 0;
+    let dailyReset = 0;
+    let completionsDeleted = 0;
+
+    for (const q of questsToProcess) {
+      if (q.quest_type === 'ONE_TIME' && q.completed) {
+        // Delete completion records
+        const delComp = await supabase
+          .from('quest_completions')
+          .delete()
+          .eq('quest_id', q.id)
+          .eq('user_id', userId);
+        if (!delComp.error) {
+          completionsDeleted += 1;
+        }
+
+        // Delete the quest row
+        const delQ = await supabase
+          .from('quests')
+          .delete()
+          .eq('id', q.id)
+          .eq('user_id', userId);
+        if (!delQ.error) {
+          oneTimeDeleted += 1;
+        }
+      } else if (q.quest_type === 'DAILY') {
+        // Delete today's completion record only
+        const delComp = await supabase
+          .from('quest_completions')
+          .delete()
+          .eq('quest_id', q.id)
+          .eq('user_id', userId)
+          .gte('completed_at', startOfTodayUtc.toISOString())
+          .neq('recommitted', true);
+        if (!delComp.error) {
+          completionsDeleted += 1;
+        }
+
+        // Reset quest definition to active
+        const resetQ = await supabase
+          .from('quests')
+          .update({ completed: false, completed_at: null })
+          .eq('id', q.id)
+          .eq('user_id', userId);
+        if (!resetQ.error) {
+          dailyReset += 1;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      one_time_deleted: oneTimeDeleted,
+      daily_reset: dailyReset,
+      completions_deleted: completionsDeleted,
+    };
   }
 
   /**
@@ -800,11 +976,36 @@ export class RpgService {
       p_subject: subject.trim(),
     });
 
-    if (!rpcError && rpcData) {
-      return rpcData as StudySession;
+    const sessionId = rpcData?.session_id;
+
+    if (!rpcError && sessionId) {
+      // Query the authoritative session row created by the RPC
+      const { data: sessionRow, error: fetchErr } = await supabase
+        .from('study_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (sessionRow && !fetchErr) {
+        return sessionRow as StudySession;
+      }
+
+      // Safe fallback ensuring all authoritative fields are populated
+      return {
+        id: sessionId,
+        group_id: groupId,
+        user_id: userId,
+        subject: subject.trim(),
+        started_at: rpcData.started_at || new Date().toISOString(),
+        ended_at: null,
+        duration_seconds: 0,
+        rewarded_group_xp: 0,
+        status: 'studying',
+        created_at: new Date().toISOString(),
+      } as StudySession;
     }
 
-    // 2. Direct fallback
+    // 2. Direct insert fallback
     const { data, error } = await supabase
       .from('study_sessions')
       .insert({
@@ -834,6 +1035,7 @@ export class RpgService {
     session?: StudySession;
     group_xp_awarded?: number;
     duration_minutes?: number;
+    duration_seconds?: number;
     error?: string;
   }> {
     const supabase = await createServerSupabase();
@@ -847,14 +1049,20 @@ export class RpgService {
       return { error: error.message };
     }
 
+    const durationSeconds = data.duration_seconds || 0;
+    const durationMinutes =
+      data.duration_minutes ?? Math.round((durationSeconds / 60) * 10) / 10;
+    const groupXpEarned = data.group_xp_earned ?? data.group_xp_awarded ?? 0;
+
     return {
-      group_xp_awarded: data.group_xp_awarded,
-      duration_minutes: data.duration_minutes,
+      group_xp_awarded: groupXpEarned,
+      duration_minutes: durationMinutes,
+      duration_seconds: durationSeconds,
     };
   }
 
   /**
-   * Get Active Study Presence for Group
+   * Get Active Study Presence for Group (Real active sessions only)
    */
   static async getGroupStudyPresence(groupId: string): Promise<
     Array<{
@@ -880,7 +1088,7 @@ export class RpgService {
 
     return data.map((d: any) => ({
       user_id: d.user_id,
-      display_name: d.profiles?.display_name || 'Grinder',
+      display_name: d.profiles?.display_name || 'Member',
       subject: d.subject,
       started_at: d.started_at,
       status: 'studying',
@@ -888,7 +1096,7 @@ export class RpgService {
   }
 
   /**
-   * Get Weekly Leaderboard for Study Group
+   * Get Weekly Leaderboard for Study Group (Real database sessions from legitimate group members)
    */
   static async getGroupLeaderboard(groupId: string): Promise<
     Array<{
@@ -903,22 +1111,44 @@ export class RpgService {
     // Last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
 
+    // Fetch verified group members first
+    const { data: membersData } = await supabase
+      .from('group_members')
+      .select('user_id, profiles(display_name)')
+      .eq('group_id', groupId);
+
+    if (!membersData || membersData.length === 0) {
+      return [];
+    }
+
+    const memberMap = new Map<string, string>();
+    membersData.forEach((m: any) => {
+      memberMap.set(m.user_id, m.profiles?.display_name || 'Member');
+    });
+
+    // Fetch completed study sessions in the last 7 days
     const { data, error } = await supabase
       .from('study_sessions')
-      .select('user_id, duration_seconds, profiles(display_name)')
+      .select('user_id, duration_seconds')
       .eq('group_id', groupId)
-      .gte('created_at', sevenDaysAgo.toISOString());
+      .eq('status', 'completed')
+      .gt('duration_seconds', 0)
+      .gte('started_at', sevenDaysAgo.toISOString());
 
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       return [];
     }
 
     const durationMap = new Map<string, { display_name: string; total_seconds: number }>();
 
     data.forEach((s: any) => {
+      // Only include valid members of this group
+      if (!memberMap.has(s.user_id)) return;
+
       const prev = durationMap.get(s.user_id) || {
-        display_name: s.profiles?.display_name || 'Member',
+        display_name: memberMap.get(s.user_id) || 'Member',
         total_seconds: 0,
       };
       prev.total_seconds += s.duration_seconds || 0;
@@ -929,14 +1159,89 @@ export class RpgService {
       .map(([user_id, val]) => ({
         user_id,
         display_name: val.display_name,
+        total_seconds: val.total_seconds,
         total_minutes: Math.round(val.total_seconds / 60),
       }))
-      .sort((a, b) => b.total_minutes - a.total_minutes);
+      .filter((item) => item.total_seconds > 0)
+      .sort((a, b) => b.total_seconds - a.total_seconds);
 
     return list.map((item, idx) => ({
       ...item,
       rank: idx + 1,
     }));
+  }
+
+  /**
+   * Get Group Weekly Study Total (Real qualifying sessions vs group_goals target)
+   */
+  static async getGroupWeeklyStudyTotal(groupId: string): Promise<{
+    totalSeconds: number;
+    totalMinutes: number;
+    formattedTime: string;
+    targetHours: number;
+    progressPercent: number;
+    hasGoal: boolean;
+    goalTitle?: string;
+  }> {
+    const supabase = await createServerSupabase();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const [sessionsRes, goalRes] = await Promise.all([
+      supabase
+        .from('study_sessions')
+        .select('duration_seconds')
+        .eq('group_id', groupId)
+        .eq('status', 'completed')
+        .gt('duration_seconds', 0)
+        .gte('started_at', sevenDaysAgo.toISOString()),
+      supabase
+        .from('group_goals')
+        .select('target_value, metric, title')
+        .eq('group_id', groupId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const totalSeconds = (sessionsRes.data || []).reduce(
+      (acc, s) => acc + (s.duration_seconds || 0),
+      0
+    );
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+
+    let formattedTime = '0m';
+    if (hours > 0 && mins > 0) {
+      formattedTime = `${hours}h ${mins}m`;
+    } else if (hours > 0) {
+      formattedTime = `${hours}h`;
+    } else if (mins > 0) {
+      formattedTime = `${mins}m`;
+    } else if (totalSeconds > 0) {
+      formattedTime = `${totalSeconds}s`;
+    } else {
+      formattedTime = '0m';
+    }
+
+    const hasGoal = Boolean(goalRes.data);
+    const targetHours = goalRes.data ? Number(goalRes.data.target_value) : 0;
+    const progressPercent =
+      targetHours > 0
+        ? Math.min(100, Math.round((totalMinutes / (targetHours * 60)) * 100))
+        : 0;
+
+    return {
+      totalSeconds,
+      totalMinutes,
+      formattedTime,
+      targetHours,
+      progressPercent,
+      hasGoal,
+      goalTitle: goalRes.data?.title,
+    };
   }
 
   /**
@@ -957,6 +1262,7 @@ export class RpgService {
       .from('quest_completions')
       .select('id, xp_earned, gold_earned, attribute_name, completed_at, quests(title)')
       .eq('user_id', userId)
+      .neq('recommitted', true)
       .order('completed_at', { ascending: false })
       .limit(6);
 
@@ -982,6 +1288,8 @@ export class RpgService {
     xpEarned: number;
     goldEarned: number;
     studyHours: number;
+    studyMinutes: number;
+    formattedStudyTime: string;
   }> {
     const supabase = await createServerSupabase();
     const sevenDaysAgo = new Date();
@@ -993,6 +1301,7 @@ export class RpgService {
         .from('quest_completions')
         .select('xp_earned, gold_earned')
         .eq('user_id', userId)
+        .neq('recommitted', true)
         .gte('completed_at', sevenDaysAgo.toISOString()),
       supabase
         .from('study_sessions')
@@ -1011,13 +1320,25 @@ export class RpgService {
       (acc: number, s: any) => acc + (s.duration_seconds || 0),
       0
     );
+    const studyMinutes = Math.floor(totalSeconds / 60);
     const studyHours = Math.round((totalSeconds / 3600) * 10) / 10;
+
+    let formattedStudyTime = '0m';
+    if (studyHours >= 1) {
+      formattedStudyTime = `${studyHours}h`;
+    } else if (studyMinutes > 0) {
+      formattedStudyTime = `${studyMinutes}m`;
+    } else if (totalSeconds > 0) {
+      formattedStudyTime = `${totalSeconds}s`;
+    }
 
     return {
       questsCompleted,
       xpEarned,
       goldEarned,
       studyHours,
+      studyMinutes,
+      formattedStudyTime,
     };
   }
 }

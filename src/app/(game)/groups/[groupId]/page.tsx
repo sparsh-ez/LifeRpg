@@ -31,12 +31,14 @@ export default async function GroupDetailPage({
   let activeSession = null;
   let presence: any[] = [];
   let leaderboard: any[] = [];
+  let weeklyStudyTotal = null;
 
   if (details.group.type === 'STUDY') {
-    [activeSession, presence, leaderboard] = await Promise.all([
+    [activeSession, presence, leaderboard, weeklyStudyTotal] = await Promise.all([
       RpgService.getActiveStudySession(user.id, groupId),
       RpgService.getGroupStudyPresence(groupId),
       RpgService.getGroupLeaderboard(groupId),
+      RpgService.getGroupWeeklyStudyTotal(groupId),
     ]);
   }
 
@@ -52,6 +54,7 @@ export default async function GroupDetailPage({
       initialActiveSession={activeSession}
       initialPresence={presence}
       initialLeaderboard={leaderboard}
+      initialWeeklyTotal={weeklyStudyTotal}
       initialTab={tab || 'overview'}
     />
   );

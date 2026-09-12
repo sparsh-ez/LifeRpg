@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { BadgePortrait } from '@/components/badges/BadgePortrait';
 import { BADGE_CATALOG } from '@/lib/rpg/badges';
+import { LandingHeroBackground } from '@/components/landing/LandingHeroBackground';
 import {
   Shield,
   Zap,
@@ -50,64 +51,82 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero Section with Integrated Character & Energy Ribbon Background */}
       <main className="flex-1">
         <section className="relative px-4 sm:px-6 lg:px-8 pt-16 pb-20 max-w-7xl mx-auto text-center overflow-hidden">
-          {/* Ambient Glows */}
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-lime-500/10 rounded-full blur-[120px] pointer-events-none" />
-          <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] bg-purple-500/10 rounded-full blur-[100px] pointer-events-none" />
+          {/* Luminous RPG Character & 3D Neon Energy Ribbons Background */}
+          <LandingHeroBackground />
 
-          {/* Tagline Badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-lime-500/30 text-lime-400 font-mono text-xs font-semibold uppercase tracking-widest mb-6 shadow-lg">
-            <Flame className="w-3.5 h-3.5 fill-lime-400" />
-            Daily Grindset Gamified
-          </div>
-
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-white max-w-4xl mx-auto uppercase leading-[1.08]">
-            Stop tracking your life.{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-lime-400 via-lime-300 to-emerald-400">
-              Start leveling it.
-            </span>
-          </h1>
-
-          <p className="mt-6 text-base sm:text-lg text-neutral-400 max-w-2xl mx-auto leading-relaxed">
-            Turn everyday goals into RPG quests. Earn non-linear XP, build real-world attributes, maintain your streak, and unlock the legendary path from Clown to Giga Chad.
-          </p>
-
-          {/* Hero CTAs */}
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/signup"
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-lime-500 hover:bg-lime-400 active:scale-95 text-neutral-950 font-black text-sm uppercase tracking-wider transition-all duration-150 shadow-[0_0_25px_rgba(163,230,53,0.4)] flex items-center justify-center gap-2"
-            >
-              <span>Enter the Game</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/dashboard"
-              className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 font-bold text-sm border border-neutral-700 transition-colors flex items-center justify-center gap-2"
-            >
-              <span>Explore Character Dashboard</span>
-            </Link>
-          </div>
-
-          {/* Quick Stats Banner */}
-          <div className="mt-12 max-w-3xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 backdrop-blur-sm">
-              <div className="text-2xl font-black font-mono text-lime-400">Non-Linear</div>
-              <div className="text-xs text-neutral-400 mt-0.5">XP Leveling Math</div>
+          {/* Hero Foreground Content */}
+          <div className="relative z-10">
+            {/* Tagline Badge */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/90 border border-lime-500/30 text-lime-400 font-mono text-xs font-semibold uppercase tracking-widest mb-6 shadow-lg backdrop-blur-sm">
+              <Flame className="w-3.5 h-3.5 fill-lime-400" />
+              Daily Grindset Gamified
             </div>
-            <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 backdrop-blur-sm">
-              <div className="text-2xl font-black font-mono text-amber-400">9 Ranks</div>
-              <div className="text-xs text-neutral-400 mt-0.5">Clown to Giga Chad</div>
+
+            <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-white max-w-4xl mx-auto uppercase leading-[1.08] drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
+              Stop tracking your life.{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-lime-400 via-lime-300 to-emerald-400">
+                Start leveling it.
+              </span>
+            </h1>
+
+            <p className="mt-6 text-base sm:text-lg text-neutral-300 max-w-2xl mx-auto leading-relaxed drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
+              Turn everyday goals into RPG quests. Earn non-linear XP, build real-world attributes, maintain your streak, and unlock the legendary path from Clown to Giga Chad.
+            </p>
+
+            {/* Hero CTAs */}
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/signup"
+                className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-lime-500 hover:bg-lime-400 active:scale-95 text-neutral-950 font-black text-sm uppercase tracking-wider transition-all duration-150 shadow-[0_0_25px_rgba(163,230,53,0.4)] flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Enter the Game</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                href="/dashboard"
+                className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 font-bold text-sm border border-neutral-700 backdrop-blur-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Explore Character Dashboard</span>
+              </Link>
             </div>
-            <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 backdrop-blur-sm">
-              <div className="text-2xl font-black font-mono text-purple-400">4 Attributes</div>
-              <div className="text-xs text-neutral-400 mt-0.5">INT, STR, DISC, CREAT</div>
-            </div>
-            <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 backdrop-blur-sm">
-              <div className="text-2xl font-black font-mono text-sky-400">Cheat-Proof</div>
-              <div className="text-xs text-neutral-400 mt-0.5">PostgreSQL RLS & RPC</div>
+
+            {/* Quick Stats / Feature Cards Banner */}
+            <div className="mt-12 max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-left">
+              <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800/90 backdrop-blur-md flex flex-col justify-between hover:border-lime-500/30 transition-colors">
+                <div className="text-xs sm:text-sm font-black font-mono tracking-wider uppercase text-lime-400">
+                  NON-LINEAR PROGRESSION
+                </div>
+                <div className="text-xs text-neutral-400 mt-1 leading-snug">
+                  Your next level is never handed to you.
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800/90 backdrop-blur-md flex flex-col justify-between hover:border-amber-500/30 transition-colors">
+                <div className="text-xs sm:text-sm font-black font-mono tracking-wider uppercase text-amber-400">
+                  9 GRINDSET RANKS
+                </div>
+                <div className="text-xs text-neutral-400 mt-1 leading-snug">
+                  Clown → Noob → Sigma → Giga Chad.
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800/90 backdrop-blur-md flex flex-col justify-between hover:border-purple-500/30 transition-colors">
+                <div className="text-xs sm:text-sm font-black font-mono tracking-wider uppercase text-purple-400">
+                  4 REAL-WORLD ATTRIBUTES
+                </div>
+                <div className="text-xs text-neutral-400 mt-1 leading-snug">
+                  Intelligence · Strength · Discipline · Creativity
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800/90 backdrop-blur-md flex flex-col justify-between hover:border-sky-500/30 transition-colors">
+                <div className="text-xs sm:text-sm font-black font-mono tracking-wider uppercase text-sky-400">
+                  SQUAD MODE
+                </div>
+                <div className="text-xs text-neutral-400 mt-1 leading-snug">
+                  Grind together. Track progress. Compete.
+                </div>
+              </div>
             </div>
           </div>
         </section>
