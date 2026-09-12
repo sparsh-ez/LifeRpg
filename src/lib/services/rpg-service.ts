@@ -533,7 +533,22 @@ export class RpgService {
   ): Promise<Group> {
     const supabase = await createServerSupabase();
 
-    // Generate clean 6-character random alphanumeric invite code
+    // 1. Try atomic create_group RPC first (single-transaction creation)
+    const { data: rpcGroup, error: rpcError } = await supabase.rpc('create_group', {
+      p_name: payload.name.trim(),
+      p_description: payload.description?.trim() || null,
+      p_type: payload.type,
+    });
+
+    if (!rpcError && rpcGroup) {
+      return {
+        ...rpcGroup,
+        member_count: 1,
+        user_role: 'owner',
+      } as Group;
+    }
+
+    // 2. Direct insert fallback
     const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
     const inviteCode = `GRP-${rand}`;
 
@@ -571,12 +586,11 @@ export class RpgService {
 
       await supabase.from('group_goals').insert({
         group_id: group.id,
-        goal_type: 'STUDY_HOURS',
+        title: '50 Hours Weekly Study Goal',
+        metric: 'hours',
         target_value: 50,
         current_value: 0,
-        period: 'WEEKLY',
-        start_date: startOfWeek.toISOString().split('T')[0],
-        end_date: endOfWeek.toISOString().split('T')[0],
+        period: 'weekly',
       });
     }
 
