@@ -1,12 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Quest, QuestCategory, QuestDifficulty, QuestCompletionResult } from '@/types/rpg';
+import { Quest, QuestCategory, QuestDifficulty, QuestType, QuestCompletionResult } from '@/types/rpg';
 import { QuestCard } from '@/components/quests/QuestCard';
 import { QuestFormModal } from '@/components/quests/QuestFormModal';
 import { LevelUpModal } from '@/components/modals/LevelUpModal';
 import { RankUpModal } from '@/components/modals/RankUpModal';
-import { Plus, Search, CheckSquare, Zap, Coins } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Zap,
+  Coins,
+  RotateCcw,
+  Target,
+  CheckCircle2,
+  Calendar,
+  Filter,
+} from 'lucide-react';
 
 interface QuestsPageViewProps {
   initialQuests: Quest[];
@@ -15,7 +25,7 @@ interface QuestsPageViewProps {
 export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
   const [quests, setQuests] = useState<Quest[]>(initialQuests);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'today' | 'daily' | 'one_time' | 'completed'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,7 +46,7 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
         setQuests(data.quests);
       }
     } catch {
-      // Refresh error
+      // Background refresh
     }
   };
 
@@ -45,6 +55,8 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
     description?: string;
     category: QuestCategory;
     difficulty: QuestDifficulty;
+    quest_type: QuestType;
+    due_date?: string;
   }) => {
     if (editingQuest) {
       const res = await fetch(`/api/quests/${editingQuest.id}`, {
@@ -103,37 +115,53 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
 
   // Filter pipeline
   const filteredQuests = quests.filter((q) => {
-    // Search
+    // Search query
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const matchTitle = q.title.toLowerCase().includes(query);
-      const matchDesc = q.description?.toLowerCase().includes(query);
+      const qText = searchQuery.toLowerCase();
+      const matchTitle = q.title.toLowerCase().includes(qText);
+      const matchDesc = q.description?.toLowerCase().includes(qText);
       if (!matchTitle && !matchDesc) return false;
     }
-    // Status
-    if (statusFilter === 'active' && q.completed) return false;
-    if (statusFilter === 'completed' && !q.completed) return false;
+
     // Category
     if (categoryFilter !== 'all' && q.category !== categoryFilter) return false;
+
     // Difficulty
     if (difficultyFilter !== 'all' && q.difficulty !== difficultyFilter) return false;
+
+    // Active tab
+    if (activeTab === 'completed') return q.completed;
+    if (activeTab === 'daily') return q.quest_type === 'DAILY' && !q.completed;
+    if (activeTab === 'one_time') return q.quest_type !== 'DAILY' && !q.completed;
+    if (activeTab === 'today') return !q.completed;
+    // 'all' includes both active and completed
 
     return true;
   });
 
-  const totalCompleted = quests.filter((q) => q.completed).length;
-  const totalActive = quests.filter((q) => !q.completed).length;
+  // Calculate metrics
+  const activeDailyQuests = quests.filter((q) => q.quest_type === 'DAILY' && !q.completed);
+  const activeOneTimeQuests = quests.filter((q) => q.quest_type !== 'DAILY' && !q.completed);
+  const completedToday = quests.filter((q) => q.completed);
+  const totalPotentialXp = quests
+    .filter((q) => !q.completed)
+    .reduce((acc, q) => acc + q.xp_reward, 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header & Stats Banner */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 sm:space-y-8">
+      {/* Top Mission Board Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#272B32]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">
-            Quest Log
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-            Manage your daily tasks, track completion history, and claim progression.
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl sm:text-4xl font-heading font-black text-[#F2F2F0] tracking-tight">
+              MISSION BOARD
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-[#16191F] text-[#C8FF3D] border border-[#272B32]">
+              {quests.filter((q) => !q.completed).length} ACTIVE
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-[#8B9099]">
+            Server-authoritative life quests. Conquer tasks to gain XP, Gold, and Attributes.
           </p>
         </div>
 
@@ -143,129 +171,138 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
             setEditingQuest(null);
             setIsModalOpen(true);
           }}
-          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-lime-500 hover:bg-lime-400 active:scale-95 text-neutral-950 font-black text-xs uppercase tracking-wider transition-all duration-150 shadow-[0_0_15px_rgba(163,230,53,0.3)] flex items-center justify-center gap-2 cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#C8FF3D] hover:bg-[#b5eb2f] active:scale-95 text-[#08090B] font-heading font-black text-xs uppercase tracking-wider transition-all duration-150 shadow-[0_0_20px_rgba(200,255,61,0.25)] cursor-pointer shrink-0"
         >
-          <Plus className="w-4 h-4" />
-          Forge New Quest
+          <Plus className="w-4 h-4 stroke-[3]" />
+          <span>FORGE QUEST</span>
         </button>
       </div>
 
-      {/* Stats Summary Bar */}
+      {/* Board Summary Metric Tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4">
-          <div className="text-xs font-mono font-bold text-neutral-400 uppercase">Active Quests</div>
-          <div className="text-2xl font-black font-mono text-lime-400 mt-1">{totalActive}</div>
-        </div>
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4">
-          <div className="text-xs font-mono font-bold text-neutral-400 uppercase">Conquered</div>
-          <div className="text-2xl font-black font-mono text-neutral-300 mt-1">{totalCompleted}</div>
-        </div>
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4">
-          <div className="text-xs font-mono font-bold text-neutral-400 uppercase">Available XP</div>
-          <div className="text-2xl font-black font-mono text-lime-400 mt-1 flex items-center gap-1">
-            <Zap className="w-4 h-4" />
-            {quests
-              .filter((q) => !q.completed)
-              .reduce((sum, q) => sum + q.xp_reward, 0)
-              .toLocaleString()}
+        <div className="bg-[#101216] border border-[#272B32] rounded-xl p-3.5 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-[#C8FF3D]/10 border border-[#C8FF3D]/20 text-[#C8FF3D]">
+            <RotateCcw className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xl font-heading font-black text-[#F2F2F0]">
+              {activeDailyQuests.length}
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#8B9099]">
+              Daily Rituals
+            </div>
           </div>
         </div>
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4">
-          <div className="text-xs font-mono font-bold text-neutral-400 uppercase">Available Gold</div>
-          <div className="text-2xl font-black font-mono text-amber-300 mt-1 flex items-center gap-1">
-            <Coins className="w-4 h-4 text-amber-400" />
-            {quests
-              .filter((q) => !q.completed)
-              .reduce((sum, q) => sum + q.gold_reward, 0)
-              .toLocaleString()}
+
+        <div className="bg-[#101216] border border-[#272B32] rounded-xl p-3.5 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+            <Target className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xl font-heading font-black text-[#F2F2F0]">
+              {activeOneTimeQuests.length}
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#8B9099]">
+              One-Time Quests
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#101216] border border-[#272B32] rounded-xl p-3.5 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-[#C8FF3D]/10 border border-[#C8FF3D]/20 text-[#C8FF3D]">
+            <Zap className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xl font-heading font-black text-[#C8FF3D]">
+              +{totalPotentialXp.toLocaleString()}
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#8B9099]">
+              Available XP
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#101216] border border-[#272B32] rounded-xl p-3.5 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-[#E5B54F]/10 border border-[#E5B54F]/20 text-[#E5B54F]">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xl font-heading font-black text-[#E5B54F]">
+              {completedToday.length}
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#8B9099]">
+              Conquered Today
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 space-y-3">
-        {/* Search */}
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
-            <Search className="w-4 h-4" />
-          </div>
+      {/* Primary Mission Board Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#101216] border border-[#272B32] rounded-xl p-2">
+        <div className="flex flex-wrap items-center gap-1 text-xs font-mono">
+          {[
+            { id: 'all', label: 'ALL QUESTS' },
+            { id: 'today', label: "TODAY'S BOARD" },
+            { id: 'daily', label: 'DAILY RITUALS' },
+            { id: 'one_time', label: 'ONE-TIME' },
+            { id: 'completed', label: 'CONQUERED' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-[#16191F] text-[#C8FF3D] border border-[#272B32] shadow-sm'
+                  : 'text-[#8B9099] hover:text-[#F2F2F0]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search input */}
+        <div className="relative min-w-[200px] max-w-xs w-full sm:w-auto">
+          <Search className="w-3.5 h-3.5 text-[#555B65] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search quests by title or notes..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white placeholder-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-lime-500 transition-colors"
+            placeholder="Search objectives..."
+            className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#08090B] border border-[#272B32] text-xs text-[#F2F2F0] placeholder-[#555B65] focus:outline-none focus:border-[#C8FF3D] focus:ring-1 focus:ring-[#C8FF3D] transition-colors"
           />
-        </div>
-
-        {/* Dropdowns / Pills */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          {/* Status buttons */}
-          <div className="inline-flex rounded-xl bg-neutral-950 p-1 border border-neutral-800 text-xs">
-            {(['all', 'active', 'completed'] as const).map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1 rounded-lg font-bold capitalize transition-all cursor-pointer ${
-                  statusFilter === status
-                    ? 'bg-neutral-800 text-lime-400 shadow-sm'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
-
-          {/* Category Filter */}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-bold text-neutral-300 focus:outline-none focus:border-lime-500 cursor-pointer"
-            aria-label="Filter by attribute category"
-          >
-            <option value="all">All Categories</option>
-            <option value="Intelligence">Intelligence</option>
-            <option value="Strength">Strength</option>
-            <option value="Discipline">Discipline</option>
-            <option value="Creativity">Creativity</option>
-          </select>
-
-          {/* Difficulty Filter */}
-          <select
-            value={difficultyFilter}
-            onChange={(e) => setDifficultyFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-bold text-neutral-300 focus:outline-none focus:border-lime-500 cursor-pointer"
-            aria-label="Filter by difficulty"
-          >
-            <option value="all">All Difficulties</option>
-            <option value="Easy">Easy</option>
-            <option value="Medium">Medium</option>
-            <option value="Hard">Hard</option>
-            <option value="Epic">Epic</option>
-          </select>
-
-          {(searchQuery || statusFilter !== 'all' || categoryFilter !== 'all' || difficultyFilter !== 'all') && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setStatusFilter('all');
-                setCategoryFilter('all');
-                setDifficultyFilter('all');
-              }}
-              className="text-xs text-neutral-400 hover:text-white underline cursor-pointer ml-auto"
-            >
-              Reset Filters
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Quests Grid or Empty State */}
-      {filteredQuests.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Quests Display */}
+      {filteredQuests.length === 0 ? (
+        <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-10 sm:p-16 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-heading font-black text-[#F2F2F0]">
+            NO OBJECTIVES FOUND
+          </h3>
+          <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
+            {activeTab === 'daily'
+              ? 'No daily rituals scheduled. Daily quests automatically reset at 00:00 UTC.'
+              : activeTab === 'completed'
+              ? 'No completed quests matching this filter.'
+              : 'Your quest board has no pending objectives in this view.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingQuest(null);
+              setIsModalOpen(true);
+            }}
+            className="mt-4 px-5 py-2 rounded-xl bg-[#16191F] hover:bg-[#1e222a] border border-[#272B32] text-[#C8FF3D] text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Forge New Quest
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
           {filteredQuests.map((quest) => (
             <QuestCard
               key={quest.id}
@@ -279,30 +316,9 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
             />
           ))}
         </div>
-      ) : (
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-neutral-800/80 border border-neutral-700 flex items-center justify-center mx-auto text-neutral-500 mb-3">
-            <CheckSquare className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-white">No quests match your criteria</h3>
-          <p className="mt-1 text-xs sm:text-sm text-neutral-400 max-w-sm mx-auto">
-            Try adjusting your search or filters, or forge a brand new quest to get back to the grindset.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setEditingQuest(null);
-              setIsModalOpen(true);
-            }}
-            className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-lime-500 hover:bg-lime-400 active:scale-95 text-neutral-950 font-bold text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(163,230,53,0.3)] cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Forge New Quest
-          </button>
-        </div>
       )}
 
-      {/* Modal */}
+      {/* Quest Modal */}
       <QuestFormModal
         isOpen={isModalOpen}
         onClose={() => {
@@ -313,21 +329,20 @@ export function QuestsPageView({ initialQuests }: QuestsPageViewProps) {
         initialQuest={editingQuest}
       />
 
-      {/* Celebrations */}
+      {/* Level Up Celebration Modal */}
       <LevelUpModal
         isOpen={levelUpData.isOpen}
         onClose={() => setLevelUpData((prev) => ({ ...prev, isOpen: false }))}
-        newLevel={levelUpData.newLevel}
         oldLevel={levelUpData.oldLevel}
+        newLevel={levelUpData.newLevel}
       />
 
-      {rankUpBadge && (
-        <RankUpModal
-          isOpen={Boolean(rankUpBadge)}
-          onClose={() => setRankUpBadge(null)}
-          badgeSlug={rankUpBadge}
-        />
-      )}
+      {/* Rank Up Celebration Modal */}
+      <RankUpModal
+        isOpen={Boolean(rankUpBadge)}
+        onClose={() => setRankUpBadge(null)}
+        badgeSlug={rankUpBadge || 'clown'}
+      />
     </div>
   );
 }

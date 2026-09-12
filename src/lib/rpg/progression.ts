@@ -1,7 +1,7 @@
 import { QuestDifficulty, QuestCategory } from '@/types/rpg';
 
 /**
- * Deterministic Non-Linear Level Progression Formula:
+ * Deterministic Non-Linear Level Progression Formula for Personal XP:
  * XP required to advance from Level N to N+1 = round(100 * N^1.5)
  */
 export function getXpRequiredForLevel(level: number): number {
@@ -18,7 +18,7 @@ export interface LevelProgress {
 }
 
 /**
- * Calculates current level and progress from Authoritative Total XP
+ * Calculates current personal level and progress from Authoritative Total XP
  */
 export function calculateLevelProgress(totalXp: number): LevelProgress {
   let level = 1;
@@ -44,7 +44,85 @@ export function calculateLevelProgress(totalXp: number): LevelProgress {
 }
 
 /**
- * Authoritative quest reward structure by difficulty
+ * Group Level Progression Formula:
+ * Group XP required for Level N to N+1 = round(500 * N^1.5)
+ */
+export function getGroupXpRequiredForLevel(level: number): number {
+  if (level < 1) return 500;
+  return Math.round(500 * Math.pow(level, 1.5));
+}
+
+/**
+ * Calculates current Group Level and progress from Authoritative Group XP
+ */
+export function calculateGroupLevelProgress(totalGroupXp: number): LevelProgress {
+  let level = 1;
+  let cumulativeXp = 0;
+  let nextCost = getGroupXpRequiredForLevel(level);
+
+  while (totalGroupXp >= cumulativeXp + nextCost) {
+    cumulativeXp += nextCost;
+    level++;
+    nextCost = getGroupXpRequiredForLevel(level);
+  }
+
+  const currentLevelXp = Math.max(0, totalGroupXp - cumulativeXp);
+  const progressPercent = Math.min(100, Math.max(0, Math.round((currentLevelXp / nextCost) * 1000) / 10));
+
+  return {
+    level,
+    currentLevelXp,
+    nextLevelCost: nextCost,
+    progressPercent,
+    totalXp: totalGroupXp,
+  };
+}
+
+/**
+ * Daily Group XP Cap per member to prevent large parties from overwhelming the ladder
+ */
+export const DAILY_MEMBER_GROUP_XP_CAP = 300;
+
+/**
+ * Study Room constants:
+ * - 1 minute of qualifying study = 1 Group XP
+ * - Minimum session: 10 minutes (600s)
+ * - Maximum rewardable session cap: 120 minutes (7200s)
+ */
+export const STUDY_MIN_MINUTES_QUALIFYING = 10;
+export const STUDY_MAX_MINUTES_CAPPED = 120;
+
+export const GROUP_XP_REWARDS: Record<QuestDifficulty, number> = {
+  Easy: 25,
+  Medium: 50,
+  Hard: 90,
+  Epic: 150,
+};
+
+/**
+ * Group quest rewards by difficulty
+ */
+export function getGroupQuestRewards(difficulty: QuestDifficulty): {
+  groupXp: number;
+  personalXp: number;
+  personalGold: number;
+} {
+  switch (difficulty) {
+    case 'Easy':
+      return { groupXp: 25, personalXp: 50, personalGold: 20 };
+    case 'Medium':
+      return { groupXp: 50, personalXp: 100, personalGold: 40 };
+    case 'Hard':
+      return { groupXp: 90, personalXp: 175, personalGold: 75 };
+    case 'Epic':
+      return { groupXp: 150, personalXp: 300, personalGold: 125 };
+    default:
+      return { groupXp: 25, personalXp: 50, personalGold: 20 };
+  }
+}
+
+/**
+ * Authoritative personal quest reward structure by difficulty
  */
 export interface RewardStructure {
   xp: number;
@@ -66,41 +144,4 @@ export function getQuestRewards(difficulty: QuestDifficulty): RewardStructure {
     default:
       return { xp: 50, gold: 20, attributePoints: 5, aura: 0 };
   }
-}
-
-/**
- * Streak calculation logic
- * A day counts as active when completing at least 1 quest that day.
- * - Same day: streak unchanged
- * - Next consecutive day: streak + 1
- * - Missed day (>= 2 days): streak resets to 1
- */
-export function evaluateStreak(
-  lastActivityDateStr: string | null,
-  now: Date = new Date()
-): { newStreak: number; isSameDay: boolean; isConsecutive: boolean } {
-  if (!lastActivityDateStr) {
-    return { newStreak: 1, isSameDay: false, isConsecutive: false };
-  }
-
-  // Format YYYY-MM-DD
-  const todayStr = now.toISOString().split('T')[0];
-  const lastDate = new Date(lastActivityDateStr);
-  const lastStr = lastDate.toISOString().split('T')[0];
-
-  if (todayStr === lastStr) {
-    return { newStreak: 0, isSameDay: true, isConsecutive: false };
-  }
-
-  // Calculate day difference
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const lastUtc = Date.UTC(lastDate.getUTCFullYear(), lastDate.getUTCMonth(), lastDate.getUTCDate());
-  const diffDays = Math.floor((todayUtc - lastUtc) / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 1) {
-    return { newStreak: 1, isSameDay: false, isConsecutive: true };
-  }
-
-  // Missed day -> reset to 1
-  return { newStreak: 1, isSameDay: false, isConsecutive: false };
 }

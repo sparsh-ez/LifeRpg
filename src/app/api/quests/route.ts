@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { title, description, category, difficulty } = body;
+    const { title, description, category, difficulty, quest_type, due_date } = body;
 
     // Strict validation
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -55,11 +55,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const type = quest_type === 'DAILY' ? 'DAILY' : 'ONE_TIME';
+
     const newQuest = await RpgService.createQuest(user.id, {
       title,
       description,
       category,
       difficulty,
+      quest_type: type,
+      due_date: due_date || null,
     });
 
     return NextResponse.json({ quest: newQuest }, { status: 201 });

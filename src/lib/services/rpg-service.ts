@@ -5,12 +5,24 @@ import {
   Quest,
   QuestCategory,
   QuestDifficulty,
+  QuestType,
   QuestCompletionResult,
   Badge,
   ShopItem,
   InventoryItem,
+  Group,
+  GroupMember,
+  GroupQuest,
+  StudySession,
+  GroupGoal,
+  GroupType,
 } from '@/types/rpg';
-import { calculateLevelProgress, getQuestRewards } from '@/lib/rpg/progression';
+import {
+  calculateLevelProgress,
+  getQuestRewards,
+  calculateGroupLevelProgress,
+  GROUP_XP_REWARDS,
+} from '@/lib/rpg/progression';
 import { BADGE_CATALOG } from '@/lib/rpg/badges';
 import { SHOP_CATALOG } from '@/lib/rpg/shop';
 
@@ -93,20 +105,45 @@ export class RpgService {
 
   /**
    * Get Quests for user (Authoritative from Supabase PostgreSQL)
+   * Resolves DAILY vs ONE_TIME status using authoritative quest completion records.
    */
   static async getQuests(userId: string): Promise<Quest[]> {
     const supabase = await createServerSupabase();
-    const { data, error } = await supabase
+    const { data: questsData, error: questsError } = await supabase
       .from('quests')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      throw new Error(`Failed to fetch quests: ${error.message}`);
+    if (questsError) {
+      throw new Error(`Failed to fetch quests: ${questsError.message}`);
     }
 
-    return (data as Quest[]) || [];
+    // Determine today's completions for daily quests (UTC server date)
+    const startOfTodayUtc = new Date();
+    startOfTodayUtc.setUTCHours(0, 0, 0, 0);
+
+    const { data: todayCompletions } = await supabase
+      .from('quest_completions')
+      .select('quest_id')
+      .eq('user_id', userId)
+      .gte('completed_at', startOfTodayUtc.toISOString());
+
+    const completedTodayQuestIds = new Set((todayCompletions || []).map((c) => c.quest_id));
+
+    return (questsData || []).map((q) => {
+      const isDaily = q.quest_type === 'DAILY';
+      const isCompletedToday = isDaily
+        ? completedTodayQuestIds.has(q.id)
+        : Boolean(q.completed);
+
+      return {
+        ...q,
+        quest_type: (q.quest_type as QuestType) || 'ONE_TIME',
+        is_completed_today: isCompletedToday,
+        completed: isDaily ? isCompletedToday : Boolean(q.completed),
+      } as Quest;
+    });
   }
 
   /**
@@ -119,27 +156,45 @@ export class RpgService {
       description?: string;
       category: QuestCategory;
       difficulty: QuestDifficulty;
+      quest_type?: QuestType;
+      due_date?: string | null;
     }
   ): Promise<Quest> {
     const rewards = getQuestRewards(payload.difficulty);
     const supabase = await createServerSupabase();
 
+    const insertPayload: Record<string, any> = {
+      user_id: userId,
+      title: payload.title.trim(),
+      description: payload.description?.trim() || null,
+      category: payload.category,
+      difficulty: payload.difficulty,
+      xp_reward: rewards.xp,
+      gold_reward: rewards.gold,
+      completed: false,
+      quest_type: payload.quest_type || 'ONE_TIME',
+      due_date: payload.due_date || null,
+    };
+
     const { data, error } = await supabase
       .from('quests')
-      .insert({
-        user_id: userId,
-        title: payload.title.trim(),
-        description: payload.description?.trim() || null,
-        category: payload.category,
-        difficulty: payload.difficulty,
-        xp_reward: rewards.xp,
-        gold_reward: rewards.gold,
-        completed: false,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
     if (error) {
+      // Gracefully handle older schema if columns are not yet present
+      if (error.message?.includes('quest_type')) {
+        delete insertPayload.quest_type;
+        delete insertPayload.due_date;
+        const fallback = await supabase
+          .from('quests')
+          .insert(insertPayload)
+          .select()
+          .single();
+        if (fallback.error) throw new Error(fallback.error.message);
+        return fallback.data as Quest;
+      }
       throw new Error(`Failed to create quest: ${error.message}`);
     }
 
@@ -332,4 +387,542 @@ export class RpgService {
       isEquipped: data.is_equipped,
     };
   }
+
+  // =========================================================================
+  // GROUP SYSTEM & STUDY ROOMS (Server Authoritative)
+  // =========================================================================
+
+  /**
+   * Get Groups the user is a member of
+   */
+  static async getGroups(userId: string): Promise<Group[]> {
+    const supabase = await createServerSupabase();
+
+    const { data: memberships, error: memberError } = await supabase
+      .from('group_members')
+      .select('group_id, role')
+      .eq('user_id', userId);
+
+    if (memberError || !memberships || memberships.length === 0) {
+      return [];
+    }
+
+    const groupIds = memberships.map((m) => m.group_id);
+    const roleMap = new Map(memberships.map((m) => [m.group_id, m.role]));
+
+    const { data: groupsData, error: groupsError } = await supabase
+      .from('groups')
+      .select('*')
+      .in('id', groupIds);
+
+    if (groupsError || !groupsData) {
+      return [];
+    }
+
+    // Get member counts for each group
+    const { data: countData } = await supabase
+      .from('group_members')
+      .select('group_id')
+      .in('group_id', groupIds);
+
+    const countMap = new Map<string, number>();
+    (countData || []).forEach((c) => {
+      countMap.set(c.group_id, (countMap.get(c.group_id) || 0) + 1);
+    });
+
+    return groupsData.map((g) => {
+      const gxp = Number(g.group_xp || 0);
+      const prog = calculateGroupLevelProgress(gxp);
+      return {
+        ...g,
+        group_xp: gxp,
+        group_level: prog.level,
+        current_level_xp: prog.currentLevelXp,
+        next_level_cost: prog.nextLevelCost,
+        progress_percent: prog.progressPercent,
+        member_count: countMap.get(g.id) || 1,
+        user_role: roleMap.get(g.id) || 'member',
+      } as Group;
+    });
+  }
+
+  /**
+   * Get single group details with members and active goal
+   */
+  static async getGroupById(
+    groupId: string,
+    userId: string
+  ): Promise<{
+    group: Group;
+    members: GroupMember[];
+    userRole: string;
+    isMember: boolean;
+    activeGoal?: GroupGoal;
+  } | null> {
+    const supabase = await createServerSupabase();
+
+    const { data: groupData, error: groupError } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('id', groupId)
+      .maybeSingle();
+
+    if (groupError || !groupData) {
+      return null;
+    }
+
+    // Fetch members with profile details
+    const { data: membersData } = await supabase
+      .from('group_members')
+      .select('id, group_id, user_id, role, joined_at, profiles(id, display_name, avatar_url)')
+      .eq('group_id', groupId);
+
+    const members: GroupMember[] = (membersData || []).map((m: any) => ({
+      id: m.id,
+      group_id: m.group_id,
+      user_id: m.user_id,
+      role: m.role,
+      joined_at: m.joined_at,
+      profile: m.profiles,
+    }));
+
+    const currentMember = members.find((m) => m.user_id === userId);
+    const gxp = Number(groupData.group_xp || 0);
+    const prog = calculateGroupLevelProgress(gxp);
+
+    const group: Group = {
+      ...groupData,
+      group_xp: gxp,
+      group_level: prog.level,
+      current_level_xp: prog.currentLevelXp,
+      next_level_cost: prog.nextLevelCost,
+      progress_percent: prog.progressPercent,
+      member_count: members.length,
+      user_role: currentMember?.role,
+    };
+
+    // Fetch active goal if any
+    const { data: goalData } = await supabase
+      .from('group_goals')
+      .select('*')
+      .eq('group_id', groupId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return {
+      group,
+      members,
+      userRole: currentMember?.role || 'none',
+      isMember: Boolean(currentMember),
+      activeGoal: goalData || undefined,
+    };
+  }
+
+  /**
+   * Create Group
+   */
+  static async createGroup(
+    userId: string,
+    payload: {
+      name: string;
+      description?: string;
+      type: GroupType;
+    }
+  ): Promise<Group> {
+    const supabase = await createServerSupabase();
+
+    // Generate clean 6-character random alphanumeric invite code
+    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const inviteCode = `GRP-${rand}`;
+
+    const { data: group, error } = await supabase
+      .from('groups')
+      .insert({
+        name: payload.name.trim(),
+        description: payload.description?.trim() || null,
+        type: payload.type,
+        owner_id: userId,
+        invite_code: inviteCode,
+        group_xp: 0,
+        group_level: 1,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create group: ${error.message}`);
+    }
+
+    // Add creator as owner member
+    await supabase.from('group_members').insert({
+      group_id: group.id,
+      user_id: userId,
+      role: 'owner',
+    });
+
+    // If STUDY group, initialize a weekly 50h goal
+    if (payload.type === 'STUDY') {
+      const startOfWeek = new Date();
+      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+      await supabase.from('group_goals').insert({
+        group_id: group.id,
+        goal_type: 'STUDY_HOURS',
+        target_value: 50,
+        current_value: 0,
+        period: 'WEEKLY',
+        start_date: startOfWeek.toISOString().split('T')[0],
+        end_date: endOfWeek.toISOString().split('T')[0],
+      });
+    }
+
+    return {
+      ...group,
+      member_count: 1,
+      user_role: 'owner',
+    } as Group;
+  }
+
+  /**
+   * Join Group by Invite Code
+   */
+  static async joinGroupByInvite(
+    userId: string,
+    inviteCode: string
+  ): Promise<{ success: boolean; group?: Group; error?: string }> {
+    const supabase = await createServerSupabase();
+
+    // 1. Try atomic RPC if available
+    const { data: rpcData, error: rpcError } = await supabase.rpc('join_group_by_invite', {
+      p_invite_code: inviteCode.trim().toUpperCase(),
+    });
+
+    if (!rpcError && rpcData?.group_id) {
+      const group = await this.getGroupById(rpcData.group_id, userId);
+      return { success: true, group: group?.group };
+    }
+
+    // 2. Fallback direct verification
+    const { data: group, error: findError } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('invite_code', inviteCode.trim().toUpperCase())
+      .maybeSingle();
+
+    if (findError || !group) {
+      return { success: false, error: 'Invalid or expired invite code' };
+    }
+
+    // Check if already a member
+    const { data: existing } = await supabase
+      .from('group_members')
+      .select('id')
+      .eq('group_id', group.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existing) {
+      return { success: true, group: group as Group };
+    }
+
+    const { error: joinError } = await supabase.from('group_members').insert({
+      group_id: group.id,
+      user_id: userId,
+      role: 'member',
+    });
+
+    if (joinError) {
+      return { success: false, error: joinError.message };
+    }
+
+    return { success: true, group: group as Group };
+  }
+
+  /**
+   * Get Shared Group Quests
+   */
+  static async getGroupQuests(groupId: string, userId: string): Promise<GroupQuest[]> {
+    const supabase = await createServerSupabase();
+
+    const { data: questsData, error } = await supabase
+      .from('group_quests')
+      .select('*')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false });
+
+    if (error || !questsData) {
+      return [];
+    }
+
+    // Check member's contributions today
+    const startOfTodayUtc = new Date();
+    startOfTodayUtc.setUTCHours(0, 0, 0, 0);
+
+    const { data: contributions } = await supabase
+      .from('group_quest_contributions')
+      .select('group_quest_id')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .gte('contributed_at', startOfTodayUtc.toISOString());
+
+    const contributedTodayIds = new Set((contributions || []).map((c) => c.group_quest_id));
+
+    return questsData.map((q) => ({
+      ...q,
+      has_contributed_today: contributedTodayIds.has(q.id),
+    })) as GroupQuest[];
+  }
+
+  /**
+   * Create Shared Group Quest
+   */
+  static async createGroupQuest(
+    userId: string,
+    groupId: string,
+    payload: {
+      title: string;
+      description?: string;
+      quest_type?: QuestType;
+      difficulty: QuestDifficulty;
+      category: QuestCategory;
+      target_count?: number;
+      due_date?: string;
+    }
+  ): Promise<GroupQuest> {
+    const supabase = await createServerSupabase();
+    const gxp = GROUP_XP_REWARDS[payload.difficulty] || 50;
+    const personalRewards = getQuestRewards(payload.difficulty);
+
+    const { data, error } = await supabase
+      .from('group_quests')
+      .insert({
+        group_id: groupId,
+        created_by: userId,
+        title: payload.title.trim(),
+        description: payload.description?.trim() || null,
+        quest_type: payload.quest_type || 'ONE_TIME',
+        difficulty: payload.difficulty,
+        category: payload.category,
+        group_xp_reward: gxp,
+        personal_xp_reward: personalRewards.xp,
+        personal_gold_reward: personalRewards.gold,
+        target_count: payload.target_count || 1,
+        due_date: payload.due_date || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create group quest: ${error.message}`);
+    }
+
+    return data as GroupQuest;
+  }
+
+  /**
+   * Complete Shared Group Quest (Server-authoritative RPC)
+   */
+  static async completeGroupQuest(
+    userId: string,
+    groupQuestId: string
+  ): Promise<{ success: boolean; group_xp_earned?: number; personal_xp_earned?: number; error?: string }> {
+    const supabase = await createServerSupabase();
+
+    const { data, error } = await supabase.rpc('complete_group_quest', {
+      p_group_quest_id: groupQuestId,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      group_xp_earned: data.group_xp_earned,
+      personal_xp_earned: data.personal_xp_earned,
+    };
+  }
+
+  /**
+   * Get Active Study Session for User in Group
+   */
+  static async getActiveStudySession(userId: string, groupId: string): Promise<StudySession | null> {
+    const supabase = await createServerSupabase();
+
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('*')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .eq('status', 'studying')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data as StudySession;
+  }
+
+  /**
+   * Start Study Session (Server-authoritative)
+   */
+  static async startStudySession(
+    userId: string,
+    groupId: string,
+    subject: string
+  ): Promise<StudySession> {
+    const supabase = await createServerSupabase();
+
+    // 1. Try RPC
+    const { data: rpcData, error: rpcError } = await supabase.rpc('start_study_session', {
+      p_group_id: groupId,
+      p_subject: subject.trim(),
+    });
+
+    if (!rpcError && rpcData) {
+      return rpcData as StudySession;
+    }
+
+    // 2. Direct fallback
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .insert({
+        group_id: groupId,
+        user_id: userId,
+        subject: subject.trim(),
+        started_at: new Date().toISOString(),
+        status: 'studying',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to start study session: ${error.message}`);
+    }
+
+    return data as StudySession;
+  }
+
+  /**
+   * End Study Session (Server-authoritative calculation of duration and GXP)
+   */
+  static async endStudySession(
+    userId: string,
+    sessionId: string
+  ): Promise<{
+    session?: StudySession;
+    group_xp_awarded?: number;
+    duration_minutes?: number;
+    error?: string;
+  }> {
+    const supabase = await createServerSupabase();
+
+    // Call server-authoritative end_study_session RPC
+    const { data, error } = await supabase.rpc('end_study_session', {
+      p_session_id: sessionId,
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return {
+      group_xp_awarded: data.group_xp_awarded,
+      duration_minutes: data.duration_minutes,
+    };
+  }
+
+  /**
+   * Get Active Study Presence for Group
+   */
+  static async getGroupStudyPresence(groupId: string): Promise<
+    Array<{
+      user_id: string;
+      display_name: string;
+      subject: string;
+      started_at: string;
+      status: 'studying' | 'break' | 'offline';
+    }>
+  > {
+    const supabase = await createServerSupabase();
+
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('user_id, subject, started_at, status, profiles(display_name)')
+      .eq('group_id', groupId)
+      .eq('status', 'studying')
+      .order('started_at', { ascending: false });
+
+    if (error || !data) {
+      return [];
+    }
+
+    return data.map((d: any) => ({
+      user_id: d.user_id,
+      display_name: d.profiles?.display_name || 'Grinder',
+      subject: d.subject,
+      started_at: d.started_at,
+      status: 'studying',
+    }));
+  }
+
+  /**
+   * Get Weekly Leaderboard for Study Group
+   */
+  static async getGroupLeaderboard(groupId: string): Promise<
+    Array<{
+      user_id: string;
+      display_name: string;
+      total_minutes: number;
+      rank: number;
+    }>
+  > {
+    const supabase = await createServerSupabase();
+
+    // Last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('user_id, duration_seconds, profiles(display_name)')
+      .eq('group_id', groupId)
+      .gte('created_at', sevenDaysAgo.toISOString());
+
+    if (error || !data) {
+      return [];
+    }
+
+    const durationMap = new Map<string, { display_name: string; total_seconds: number }>();
+
+    data.forEach((s: any) => {
+      const prev = durationMap.get(s.user_id) || {
+        display_name: s.profiles?.display_name || 'Member',
+        total_seconds: 0,
+      };
+      prev.total_seconds += s.duration_seconds || 0;
+      durationMap.set(s.user_id, prev);
+    });
+
+    const list = Array.from(durationMap.entries())
+      .map(([user_id, val]) => ({
+        user_id,
+        display_name: val.display_name,
+        total_minutes: Math.round(val.total_seconds / 60),
+      }))
+      .sort((a, b) => b.total_minutes - a.total_minutes);
+
+    return list.map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+    }));
+  }
 }
+
