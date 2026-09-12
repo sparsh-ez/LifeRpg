@@ -654,7 +654,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 8. FUNCTION GRANTS (RESTRICT EXECUTE TO AUTHENTICATED USERS ONLY)
+-- 8. TABLE PRIVILEGES & FUNCTION GRANTS (LEAST PRIVILEGE PRINCIPLE)
+
+-- Table Privileges for Authenticated Role
+-- Profiles: SELECT and UPDATE for authenticated users
+GRANT SELECT, UPDATE ON TABLE public.profiles TO authenticated;
+
+-- Characters: SELECT only for authenticated users (Client read-only! Progression & cosmetics mutated exclusively via SECURITY DEFINER RPCs)
+GRANT SELECT ON TABLE public.characters TO authenticated;
+
+-- Quests: SELECT, INSERT, UPDATE, DELETE for authenticated users (Reward integrity enforced via trigger)
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.quests TO authenticated;
+
+-- Quest Completions: SELECT only (Audit records created exclusively via complete_quest RPC)
+GRANT SELECT ON TABLE public.quest_completions TO authenticated;
+
+-- Badges: SELECT only (Static catalog)
+GRANT SELECT ON TABLE public.badges TO authenticated;
+
+-- User Badges: SELECT only (Awarded exclusively via server-side triggers / RPCs)
+GRANT SELECT ON TABLE public.user_badges TO authenticated;
+
+-- Shop Items: SELECT only (Static catalog)
+GRANT SELECT ON TABLE public.shop_items TO authenticated;
+
+-- Inventory: SELECT only (Mutated exclusively via purchase_shop_item and toggle_equip_item RPCs)
+GRANT SELECT ON TABLE public.inventory TO authenticated;
+
+-- Function Execution Privileges (Restricted to Authenticated Users Only)
 REVOKE ALL ON FUNCTION public.complete_quest(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.complete_quest(UUID) TO authenticated;
 
