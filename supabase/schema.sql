@@ -110,7 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_quests_completed ON public.quests(completed);
 CREATE INDEX IF NOT EXISTS idx_user_badges_user ON public.user_badges(user_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_user ON public.inventory(user_id);
 
--- 4. ROW LEVEL SECURITY (RLS)
+-- 4. ROW LEVEL SECURITY (RLS) - STRICTLY RESTRICTIVE POLICIES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.characters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quests ENABLE ROW LEVEL SECURITY;
@@ -126,41 +126,100 @@ CREATE POLICY "Users can read their own profile" ON public.profiles
 CREATE POLICY "Users can update their own profile" ON public.profiles
     FOR UPDATE USING (auth.uid() = id);
 
--- Characters Policies (Progression mutation handled strictly via RPC)
+-- Characters Policies (READ-ONLY for clients! Progression & cosmetics mutated exclusively via SECURITY DEFINER RPCs)
 CREATE POLICY "Users can read their own character" ON public.characters
     FOR SELECT USING (auth.uid() = user_id);
 
--- Quests Policies (Full CRUD for own quests only)
+-- Quests Policies
+-- Read: Own quests only
 CREATE POLICY "Users can read their own quests" ON public.quests
     FOR SELECT USING (auth.uid() = user_id);
+
+-- Insert: Own quests only (rewards are enforced by database trigger below)
 CREATE POLICY "Users can insert their own quests" ON public.quests
     FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update their own quests" ON public.quests
-    FOR UPDATE USING (auth.uid() = user_id);
+
+-- Update: Can only update uncompleted quests owned by user.
+-- Rewards and completion status cannot be changed directly through client updates!
+CREATE POLICY "Users can update their own uncompleted quests" ON public.quests
+    FOR UPDATE USING (auth.uid() = user_id AND NOT completed);
+
+-- Delete: Can delete own quests
 CREATE POLICY "Users can delete their own quests" ON public.quests
     FOR DELETE USING (auth.uid() = user_id);
 
--- Quest Completions Policies
+-- Quest Completions Policies (READ-ONLY audit log for user)
 CREATE POLICY "Users can read their own completions" ON public.quest_completions
     FOR SELECT USING (auth.uid() = user_id);
 
--- Badges Policies (Public read for authenticated users)
+-- Badges Policies (Read-only for authenticated users)
 CREATE POLICY "Badges are viewable by authenticated users" ON public.badges
     FOR SELECT TO authenticated USING (true);
 
--- User Badges Policies
+-- User Badges Policies (READ-ONLY for users; inserts managed strictly by SECURITY DEFINER RPCs)
 CREATE POLICY "Users can read their own badges" ON public.user_badges
     FOR SELECT USING (auth.uid() = user_id);
 
--- Shop Items Policies (Public read for authenticated users)
+-- Shop Items Policies (Read-only for authenticated users)
 CREATE POLICY "Shop items are viewable by authenticated users" ON public.shop_items
     FOR SELECT TO authenticated USING (true);
 
--- Inventory Policies
+-- Inventory Policies (READ-ONLY for users; purchases and equips handled strictly by SECURITY DEFINER RPCs)
 CREATE POLICY "Users can read their own inventory" ON public.inventory
     FOR SELECT USING (auth.uid() = user_id);
 
--- 5. SEED DATA
+-- 5. DATABASE TRIGGER FOR QUEST INTEGRITY & REWARD AUTHORITATIVENESS
+-- Forces rewards to be derived from difficulty and prevents client tampering
+CREATE OR REPLACE FUNCTION public.quests_enforce_integrity()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Derive deterministic rewards from difficulty
+    CASE NEW.difficulty
+        WHEN 'Easy' THEN
+            NEW.xp_reward := 50;
+            NEW.gold_reward := 20;
+        WHEN 'Medium' THEN
+            NEW.xp_reward := 100;
+            NEW.gold_reward := 40;
+        WHEN 'Hard' THEN
+            NEW.xp_reward := 175;
+            NEW.gold_reward := 75;
+        WHEN 'Epic' THEN
+            NEW.xp_reward := 300;
+            NEW.gold_reward := 125;
+        ELSE
+            NEW.xp_reward := 50;
+            NEW.gold_reward := 20;
+    END CASE;
+
+    IF TG_OP = 'INSERT' THEN
+        NEW.completed := FALSE;
+        NEW.completed_at := NULL;
+        RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        -- Prevent changing quest ownership
+        NEW.user_id := OLD.user_id;
+
+        -- Prevent direct completion outside of complete_quest() RPC
+        IF NEW.completed IS DISTINCT FROM OLD.completed THEN
+            IF current_setting('liferpg.completing_quest', true) IS DISTINCT FROM 'true' THEN
+                RAISE EXCEPTION 'Quests can only be completed through the complete_quest procedure';
+            END IF;
+        END IF;
+
+        RETURN NEW;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_quests_integrity ON public.quests;
+CREATE TRIGGER trg_quests_integrity
+    BEFORE INSERT OR UPDATE ON public.quests
+    FOR EACH ROW EXECUTE FUNCTION public.quests_enforce_integrity();
+
+-- 6. SEED DATA
 
 -- Insert Badges (9 Streak Progression Ranks)
 INSERT INTO public.badges (slug, name, required_streak, gold_reward, aura_reward, description, order_index)
@@ -201,7 +260,7 @@ ON CONFLICT (slug) DO UPDATE SET
     rarity = EXCLUDED.rarity,
     icon_name = EXCLUDED.icon_name;
 
--- 6. HELPER FUNCTIONS & HARDENED RPC PROCEDURES
+-- 7. HELPER FUNCTIONS & HARDENED SECURITY DEFINER RPC PROCEDURES
 
 -- Calculate Level from Total XP: Level N -> N+1 requires round(100 * N^1.5)
 CREATE OR REPLACE FUNCTION public.calculate_level(p_total_xp BIGINT)
@@ -230,10 +289,10 @@ BEGIN
         v_level := v_level + 1;
     END LOOP;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp;
+$$ LANGUAGE plpgsql IMMUTABLE SET search_path = public;
 
 -- Trigger to auto-create Profile and Character on auth.users sign-up
--- Initial attributes strictly set to 0
+-- Initial attributes strictly set to 0 per specification
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -259,7 +318,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -288,12 +347,17 @@ DECLARE
     v_bonus_gold INT := 0;
     v_bonus_aura INT := 0;
 BEGIN
-    -- 1. Strictly verify authenticated identity
+    -- 1. Validate authenticated session
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthenticated request';
     END IF;
 
-    -- 2. Fetch and lock quest, verifying ownership inside RPC
+    -- 2. Validate input
+    IF p_quest_id IS NULL THEN
+        RAISE EXCEPTION 'Quest ID is required';
+    END IF;
+
+    -- 3. Fetch and lock quest, verifying ownership inside the RPC
     SELECT * INTO v_quest FROM public.quests
     WHERE id = p_quest_id AND user_id = v_user_id
     FOR UPDATE;
@@ -302,12 +366,12 @@ BEGIN
         RAISE EXCEPTION 'Quest not found or access denied';
     END IF;
 
-    -- 3. Prevent duplicate completion
+    -- 4. Prevent duplicate completion
     IF v_quest.completed THEN
         RAISE EXCEPTION 'Quest has already been conquered';
     END IF;
 
-    -- 4. Fetch and lock character
+    -- 5. Fetch and lock character
     SELECT * INTO v_char FROM public.characters
     WHERE user_id = v_user_id
     FOR UPDATE;
@@ -316,7 +380,7 @@ BEGIN
         RAISE EXCEPTION 'Character data not found';
     END IF;
 
-    -- 5. Calculate deterministic rewards strictly server-side based on difficulty
+    -- 6. Calculate deterministic rewards strictly server-side
     CASE v_quest.difficulty
         WHEN 'Easy' THEN
             v_xp_gain := 50;
@@ -341,7 +405,7 @@ BEGIN
             v_attr_gain := 5;
     END CASE;
 
-    -- 6. Calculate Level before and after
+    -- 7. Calculate Level before and after
     SELECT level INTO v_old_level FROM public.calculate_level(v_char.total_xp);
     SELECT level INTO v_new_level FROM public.calculate_level(v_char.total_xp + v_xp_gain);
 
@@ -350,7 +414,7 @@ BEGIN
         v_aura_gain := v_aura_gain + (50 * (v_new_level - v_old_level));
     END IF;
 
-    -- 7. Calculate streak logic (same-day vs consecutive vs reset)
+    -- 8. Calculate streak logic (same-day vs consecutive vs reset)
     IF v_char.last_activity_date IS NULL THEN
         v_new_streak := 1;
     ELSIF v_char.last_activity_date = v_today THEN
@@ -364,7 +428,7 @@ BEGIN
 
     v_new_longest := GREATEST(v_char.longest_streak, v_new_streak);
 
-    -- 8. Check eligible streak badges
+    -- 9. Check eligible streak badges
     FOR v_badge IN 
         SELECT * FROM public.badges 
         WHERE required_streak <= v_new_streak 
@@ -380,7 +444,7 @@ BEGIN
         v_new_badges := array_append(v_new_badges, v_badge.slug);
     END LOOP;
 
-    -- 9. Update character progression
+    -- 10. Update character progression (authoritative database update)
     UPDATE public.characters
     SET 
         total_xp = total_xp + v_xp_gain,
@@ -396,18 +460,20 @@ BEGIN
         updated_at = now()
     WHERE user_id = v_user_id;
 
-    -- 10. Mark quest completed
+    -- 11. Mark quest completed (setting session flag to satisfy integrity trigger)
+    PERFORM set_config('liferpg.completing_quest', 'true', true);
     UPDATE public.quests
     SET 
         completed = TRUE,
         completed_at = now()
     WHERE id = p_quest_id;
+    PERFORM set_config('liferpg.completing_quest', 'false', true);
 
-    -- 11. Insert quest completion record
+    -- 12. Insert quest completion audit record
     INSERT INTO public.quest_completions (user_id, quest_id, xp_earned, gold_earned, attribute_name, attribute_points)
     VALUES (v_user_id, p_quest_id, v_xp_gain, v_gold_gain, v_quest.category, v_attr_gain);
 
-    -- 12. Return result
+    -- 13. Return atomic result payload
     RETURN jsonb_build_object(
         'success', TRUE,
         'quest_id', p_quest_id,
@@ -426,7 +492,7 @@ BEGIN
         'unlocked_badges', v_new_badges
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- RPC: Purchase Shop Item (Hardened Atomic Gold deduction & Inventory check)
 CREATE OR REPLACE FUNCTION public.purchase_shop_item(p_item_slug TEXT)
@@ -440,7 +506,6 @@ BEGIN
         RAISE EXCEPTION 'Unauthenticated request';
     END IF;
 
-    -- Validate input
     IF p_item_slug IS NULL OR length(trim(p_item_slug)) = 0 THEN
         RAISE EXCEPTION 'Invalid item slug';
     END IF;
@@ -484,7 +549,7 @@ BEGIN
         'remaining_gold', v_char.gold - v_item.price
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- RPC: Equip/Unequip Inventory Item (Hardened)
 CREATE OR REPLACE FUNCTION public.toggle_equip_item(p_item_slug TEXT)
@@ -536,9 +601,9 @@ BEGIN
         'is_equipped', v_new_state
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 7. FUNCTION GRANTS (RESTRICT EXECUTE TO AUTHENTICATED USERS ONLY)
+-- 8. FUNCTION GRANTS (RESTRICT EXECUTE TO AUTHENTICATED USERS ONLY)
 REVOKE ALL ON FUNCTION public.complete_quest(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.complete_quest(UUID) TO authenticated;
 

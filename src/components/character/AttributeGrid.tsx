@@ -74,7 +74,7 @@ export function AttributeGrid({
         {attributes.map((attr) => {
           const Icon = attr.icon;
           // Progress within current hundred (0-100 scale visual)
-          const barPercent = Math.min(100, Math.max(8, attr.value % 100 || 10));
+          const barPercent = attr.value === 0 ? 0 : Math.min(100, Math.max(4, attr.value % 100 === 0 ? 100 : attr.value % 100));
 
           return (
             <div
