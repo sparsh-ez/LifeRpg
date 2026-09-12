@@ -13,11 +13,13 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccessNotice(null);
 
     try {
       const res = await fetch('/api/auth/signup', {
@@ -30,7 +32,7 @@ export default function SignupPage() {
         }),
       });
 
-      let data: { error?: string; success?: boolean } = {};
+      let data: { error?: string; success?: boolean; requiresConfirmation?: boolean } = {};
       try {
         data = await res.json();
       } catch {
@@ -46,8 +48,14 @@ export default function SignupPage() {
         throw new Error(errorMsg);
       }
 
-      router.push('/dashboard');
-      router.refresh();
+      if (data.requiresConfirmation) {
+        setSuccessNotice(
+          'Character forged! A confirmation link was sent to your email. Confirm it to log in, or disable "Confirm email" in Supabase Auth settings for immediate instant entry.'
+        );
+      } else {
+        router.push('/dashboard');
+        router.refresh();
+      }
     } catch (err: unknown) {
       if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
         setError('Network error: Unable to reach the Life RPG server. Please verify the dev server is active.');
@@ -95,6 +103,20 @@ export default function SignupPage() {
 
         {/* Card */}
         <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+          {successNotice && (
+            <div className="mb-5 p-3.5 rounded-xl bg-lime-500/10 border border-lime-500/30 text-lime-400 text-xs font-medium">
+              {successNotice}
+              <div className="mt-2.5">
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-lime-500/20 hover:bg-lime-500/30 border border-lime-500/40 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Go to Login →
+                </Link>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
               {error}

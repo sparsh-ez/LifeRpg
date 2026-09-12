@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: Request) {
   try {
@@ -74,7 +75,6 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      // Diagnostic check for network / connectivity failures
       if (
         error.message?.toLowerCase().includes('fetch failed') ||
         error.name === 'AuthRetryableFetchError'
@@ -87,7 +87,16 @@ export async function POST(request: Request) {
         );
       }
 
-      // Upstream Supabase Auth rejection (e.g. duplicate user, invalid email)
+      if (error.message?.toLowerCase().includes('rate limit')) {
+        return NextResponse.json(
+          {
+            error:
+              'Supabase email rate limit exceeded (too many confirmation emails sent recently). To test without email limits, disable "Confirm email" in your Supabase Dashboard under Authentication -> Providers -> Email.',
+          },
+          { status: 429 }
+        );
+      }
+
       const statusCode = (error as { status?: number }).status || 400;
       return NextResponse.json({ error: error.message }, { status: statusCode });
     }
@@ -101,18 +110,16 @@ export async function POST(request: Request) {
 
     // 4. Desired Flow: Profile & Character Creation in Database
     try {
-      // Create or ensure profile exists
       await supabase.from('profiles').upsert({
         id: data.user.id,
         display_name: cleanDisplayName,
         avatar_url: null,
       });
 
-      // Create or ensure character exists with initial attributes = 0
       await supabase.from('characters').upsert({
         user_id: data.user.id,
         total_xp: 0,
-        gold: 50, // Welcome Starter Gold
+        gold: 50,
         aura: 0,
         current_streak: 0,
         longest_streak: 0,
@@ -125,29 +132,52 @@ export async function POST(request: Request) {
         equipped_avatar_frame: 'none',
       });
 
-      // Award starter Clown badge
       await supabase.from('user_badges').upsert({
         user_id: data.user.id,
         badge_slug: 'clown',
       });
     } catch (dbErr) {
-      console.warn('Profile/character upsert error (handled by DB trigger if present):', dbErr);
+      console.warn('Profile/character upsert error:', dbErr);
     }
 
-    // 5. If session was not automatically established (e.g. email confirm setting), attempt sign in
-    if (!data.session) {
-      try {
-        await supabase.auth.signInWithPassword({
+    // 5. Establish session cookies
+    let hasSession = !!data.session;
+
+    if (!hasSession) {
+      // Check if service role key can auto-confirm for instant access
+      const adminClient = createAdminClient();
+      if (adminClient) {
+        try {
+          await adminClient.auth.admin.updateUserById(data.user.id, {
+            email_confirm: true,
+          });
+          const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+          });
+          if (!signInErr) {
+            hasSession = true;
+          }
+        } catch (err) {
+          console.warn('Auto-confirm attempt failed:', err);
+        }
+      } else {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
           password,
         });
-      } catch {
-        // Session creation handled on redirect
+        if (!signInErr) {
+          hasSession = true;
+        }
       }
     }
 
     return NextResponse.json(
-      { success: true, user: data.user },
+      {
+        success: true,
+        user: data.user,
+        requiresConfirmation: !hasSession,
+      },
       { status: 201 }
     );
   } catch (err: unknown) {
