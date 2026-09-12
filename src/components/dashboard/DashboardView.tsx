@@ -431,116 +431,14 @@ export function DashboardView({
       </section>
 
       {/* ========================================================================= */}
-      {/* 3. MAIN DASHBOARD SPLIT: TODAY'S QUESTS (LEFT) & SIDEBAR (RIGHT)           */}
+      {/* 3. MAIN DASHBOARD CONTENT: SUPPORTING PANELS (LEFT) & TODAY'S QUESTS (RIGHT) */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mt-8">
+      <div className="grid grid-cols-1 md:grid-cols-[38%_1fr] lg:grid-cols-[36%_1fr] gap-5 lg:gap-6 items-start mt-8">
         {/* --------------------------------------------------------------------- */}
-        {/* PRIMARY: TODAY'S QUESTS (8 COLS)                                      */}
+        {/* LEFT COLUMN: SUPPORTING RPG INFORMATION (35-38%)                      */}
+        {/* On mobile: collapses and appears below quests (order-2 md:order-1)    */}
         {/* --------------------------------------------------------------------- */}
-        <div className="lg:col-span-8 space-y-4">
-          {/* Header & Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#272B32]">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h2 className="text-xl font-heading font-black tracking-wide text-[#F2F2F0]">
-                  TODAY&apos;S QUESTS
-                </h2>
-                <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-[#16191F] text-[#8B9099] border border-[#272B32]">
-                  {activeQuests.length} ACTIVE
-                </span>
-                {completedTodayCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/30">
-                    {completedTodayCount} CONQUERED
-                  </span>
-                )}
-              </div>
-              <p className="text-xs font-mono text-[#8B9099] uppercase tracking-wider mt-0.5">
-                YOUR MISSIONS FOR A BETTER TOMORROW
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              {/* Filter Tabs */}
-              <div className="flex items-center bg-[#101216] border border-[#272B32] rounded-xl p-0.5 text-xs font-mono">
-                {(['ALL', 'DAILY', 'ONE_TIME', 'COMPLETED'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setFilterType(tab)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                      filterType === tab
-                        ? 'bg-[#16191F] text-[#C8FF3D] font-bold border border-[#272B32]'
-                        : 'text-[#8B9099] hover:text-[#F2F2F0]'
-                    }`}
-                  >
-                    {tab === 'ONE_TIME' ? 'ONE-TIME' : tab}
-                  </button>
-                ))}
-              </div>
-
-              {/* Forge Quest Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingQuest(null);
-                  setIsModalOpen(true);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-[#C8FF3D] hover:bg-[#b5eb2f] text-[#08090B] font-heading font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all duration-150 shadow-[0_0_15px_rgba(200,255,61,0.2)] cursor-pointer"
-              >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>FORGE</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quests List (Real DB data, exact titles) */}
-          {filteredQuests.length === 0 ? (
-            <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-8 sm:p-12 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-heading font-black text-[#F2F2F0]">
-                MISSION BOARD CLEAR
-              </h3>
-              <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
-                {filterType === 'DAILY'
-                  ? 'No daily rituals scheduled today. Daily rituals reset every midnight UTC.'
-                  : filterType === 'COMPLETED'
-                  ? 'No completed quests yet. Conquering tasks awards XP, Gold, and Attributes.'
-                  : 'Your quest board is currently empty. Forge a new quest to start gaining real-life XP.'}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingQuest(null);
-                  setIsModalOpen(true);
-                }}
-                className="mt-4 px-4 py-2 rounded-xl bg-[#16191F] hover:bg-[#1f232c] border border-[#272B32] text-[#C8FF3D] text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" /> Forge Quest
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredQuests.map((quest) => (
-                <QuestCard
-                  key={quest.id}
-                  quest={quest}
-                  onConquer={handleConquerQuest}
-                  onEdit={(q) => {
-                    setEditingQuest(q);
-                    setIsModalOpen(true);
-                  }}
-                  onDelete={handleDeleteQuest}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* --------------------------------------------------------------------- */}
-        {/* SECONDARY RAIL: SQUAD, ATTRIBUTES, RECENT, WEEKLY (4 COLS)            */}
-        {/* --------------------------------------------------------------------- */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className="space-y-5 lg:space-y-6 order-2 md:order-1">
           {/* 1. SQUAD ACTIVITY */}
           <div className="bg-[#101216] border border-[#272B32] rounded-2xl p-5 shadow-lg relative overflow-hidden">
             <div className="flex items-center justify-between mb-3">
@@ -737,6 +635,110 @@ export function DashboardView({
               )}
             </div>
           </div>
+        </div>
+
+        {/* --------------------------------------------------------------------- */}
+        {/* RIGHT COLUMN: TODAY'S QUESTS / MISSION BOARD (62-65%)                 */}
+        {/* On mobile: collapses and appears FIRST (order-1 md:order-2)           */}
+        {/* --------------------------------------------------------------------- */}
+        <div className="space-y-4 order-1 md:order-2">
+          {/* Header & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#272B32]">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-xl font-heading font-black tracking-wide text-[#F2F2F0]">
+                  TODAY&apos;S QUESTS
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-[#16191F] text-[#8B9099] border border-[#272B32]">
+                  {activeQuests.length} ACTIVE
+                </span>
+                {completedTodayCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/30">
+                    {completedTodayCount} CONQUERED
+                  </span>
+                )}
+              </div>
+              <p className="text-xs font-mono text-[#8B9099] uppercase tracking-wider mt-0.5">
+                YOUR MISSIONS FOR A BETTER TOMORROW
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {/* Filter Tabs */}
+              <div className="flex items-center bg-[#101216] border border-[#272B32] rounded-xl p-0.5 text-xs font-mono">
+                {(['ALL', 'DAILY', 'ONE_TIME', 'COMPLETED'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setFilterType(tab)}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      filterType === tab
+                        ? 'bg-[#16191F] text-[#C8FF3D] font-bold border border-[#272B32]'
+                        : 'text-[#8B9099] hover:text-[#F2F2F0]'
+                    }`}
+                  >
+                    {tab === 'ONE_TIME' ? 'ONE-TIME' : tab}
+                  </button>
+                ))}
+              </div>
+
+              {/* Forge Quest Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingQuest(null);
+                  setIsModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#C8FF3D] hover:bg-[#b5eb2f] text-[#08090B] font-heading font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all duration-150 shadow-[0_0_15px_rgba(200,255,61,0.2)] cursor-pointer"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>FORGE</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quests List (Real DB data, exact titles) */}
+          {filteredQuests.length === 0 ? (
+            <div className="bg-[#101216] border border-[#272B32] border-dashed rounded-2xl p-8 sm:p-12 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-[#16191F] border border-[#272B32] flex items-center justify-center mx-auto mb-3 text-[#555B65]">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-heading font-black text-[#F2F2F0]">
+                MISSION BOARD CLEAR
+              </h3>
+              <p className="text-xs text-[#8B9099] mt-1 max-w-sm mx-auto">
+                {filterType === 'DAILY'
+                  ? 'No daily rituals scheduled today. Daily rituals reset every midnight UTC.'
+                  : filterType === 'COMPLETED'
+                  ? 'No completed quests yet. Conquering tasks awards XP, Gold, and Attributes.'
+                  : 'Your quest board is currently empty. Forge a new quest to start gaining real-life XP.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingQuest(null);
+                  setIsModalOpen(true);
+                }}
+                className="mt-4 px-4 py-2 rounded-xl bg-[#16191F] hover:bg-[#1f232c] border border-[#272B32] text-[#C8FF3D] text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Forge Quest
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredQuests.map((quest) => (
+                <QuestCard
+                  key={quest.id}
+                  quest={quest}
+                  onConquer={handleConquerQuest}
+                  onEdit={(q) => {
+                    setEditingQuest(q);
+                    setIsModalOpen(true);
+                  }}
+                  onDelete={handleDeleteQuest}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
