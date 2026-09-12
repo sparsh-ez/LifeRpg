@@ -1,5 +1,5 @@
 -- ==============================================================================
--- LIFE RPG - COMPLETE POSTGRESQL SCHEMA & STORED PROCEDURES (SUPABASE)
+-- LIFE RPG - HARDENED PRODUCTION POSTGRESQL SCHEMA & STORED PROCEDURES (SUPABASE)
 -- ==============================================================================
 
 -- 1. EXTENSIONS
@@ -16,18 +16,19 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 -- Characters table (authoritative progression values)
+-- Initial attributes strictly set to 0 per specification
 CREATE TABLE IF NOT EXISTS public.characters (
     user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
-    total_xp BIGINT NOT NULL DEFAULT 0,
-    gold INT NOT NULL DEFAULT 50,
-    aura INT NOT NULL DEFAULT 0,
-    current_streak INT NOT NULL DEFAULT 0,
-    longest_streak INT NOT NULL DEFAULT 0,
+    total_xp BIGINT NOT NULL DEFAULT 0 CHECK (total_xp >= 0),
+    gold INT NOT NULL DEFAULT 50 CHECK (gold >= 0),
+    aura INT NOT NULL DEFAULT 0 CHECK (aura >= 0),
+    current_streak INT NOT NULL DEFAULT 0 CHECK (current_streak >= 0),
+    longest_streak INT NOT NULL DEFAULT 0 CHECK (longest_streak >= 0),
     last_activity_date DATE DEFAULT NULL,
-    intelligence INT NOT NULL DEFAULT 10,
-    strength INT NOT NULL DEFAULT 10,
-    discipline INT NOT NULL DEFAULT 10,
-    creativity INT NOT NULL DEFAULT 10,
+    intelligence INT NOT NULL DEFAULT 0 CHECK (intelligence >= 0),
+    strength INT NOT NULL DEFAULT 0 CHECK (strength >= 0),
+    discipline INT NOT NULL DEFAULT 0 CHECK (discipline >= 0),
+    creativity INT NOT NULL DEFAULT 0 CHECK (creativity >= 0),
     equipped_title TEXT NOT NULL DEFAULT 'Novice Adventurer',
     equipped_badge TEXT NOT NULL DEFAULT 'clown',
     equipped_avatar_frame TEXT NOT NULL DEFAULT 'none',
@@ -39,12 +40,12 @@ CREATE TABLE IF NOT EXISTS public.characters (
 CREATE TABLE IF NOT EXISTS public.quests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
+    title TEXT NOT NULL CHECK (char_length(trim(title)) > 0 AND char_length(title) <= 120),
     description TEXT,
     category TEXT NOT NULL CHECK (category IN ('Intelligence', 'Strength', 'Discipline', 'Creativity')),
     difficulty TEXT NOT NULL CHECK (difficulty IN ('Easy', 'Medium', 'Hard', 'Epic')),
-    xp_reward INT NOT NULL,
-    gold_reward INT NOT NULL,
+    xp_reward INT NOT NULL CHECK (xp_reward > 0),
+    gold_reward INT NOT NULL CHECK (gold_reward >= 0),
     completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ DEFAULT NULL
@@ -55,10 +56,10 @@ CREATE TABLE IF NOT EXISTS public.quest_completions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     quest_id UUID NOT NULL REFERENCES public.quests(id) ON DELETE CASCADE,
-    xp_earned INT NOT NULL,
-    gold_earned INT NOT NULL,
-    attribute_name TEXT NOT NULL,
-    attribute_points INT NOT NULL,
+    xp_earned INT NOT NULL CHECK (xp_earned > 0),
+    gold_earned INT NOT NULL CHECK (gold_earned >= 0),
+    attribute_name TEXT NOT NULL CHECK (attribute_name IN ('Intelligence', 'Strength', 'Discipline', 'Creativity')),
+    attribute_points INT NOT NULL CHECK (attribute_points > 0),
     completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -66,9 +67,9 @@ CREATE TABLE IF NOT EXISTS public.quest_completions (
 CREATE TABLE IF NOT EXISTS public.badges (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    required_streak INT NOT NULL,
-    gold_reward INT NOT NULL,
-    aura_reward INT NOT NULL,
+    required_streak INT NOT NULL CHECK (required_streak >= 0),
+    gold_reward INT NOT NULL CHECK (gold_reward >= 0),
+    aura_reward INT NOT NULL CHECK (aura_reward >= 0),
     description TEXT NOT NULL,
     order_index INT NOT NULL
 );
@@ -86,8 +87,8 @@ CREATE TABLE IF NOT EXISTS public.shop_items (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    price INT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('Cosmetic', 'Title', 'Aura', 'Flair')),
+    price INT NOT NULL CHECK (price >= 0),
     rarity TEXT NOT NULL CHECK (rarity IN ('Common', 'Uncommon', 'Rare', 'Epic', 'Legendary')),
     icon_name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -125,11 +126,9 @@ CREATE POLICY "Users can read their own profile" ON public.profiles
 CREATE POLICY "Users can update their own profile" ON public.profiles
     FOR UPDATE USING (auth.uid() = id);
 
--- Characters Policies (Authoritative updates handled via RPC, reads allowed)
+-- Characters Policies (Progression mutation handled strictly via RPC)
 CREATE POLICY "Users can read their own character" ON public.characters
     FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can update their own cosmetic loadout" ON public.characters
-    FOR UPDATE USING (auth.uid() = user_id);
 
 -- Quests Policies (Full CRUD for own quests only)
 CREATE POLICY "Users can read their own quests" ON public.quests
@@ -145,27 +144,25 @@ CREATE POLICY "Users can delete their own quests" ON public.quests
 CREATE POLICY "Users can read their own completions" ON public.quest_completions
     FOR SELECT USING (auth.uid() = user_id);
 
--- Badges Policies (Public read for all users)
-CREATE POLICY "Badges are viewable by everyone" ON public.badges
-    FOR SELECT USING (true);
+-- Badges Policies (Public read for authenticated users)
+CREATE POLICY "Badges are viewable by authenticated users" ON public.badges
+    FOR SELECT TO authenticated USING (true);
 
 -- User Badges Policies
 CREATE POLICY "Users can read their own badges" ON public.user_badges
     FOR SELECT USING (auth.uid() = user_id);
 
--- Shop Items Policies (Public read for all users)
-CREATE POLICY "Shop items are viewable by everyone" ON public.shop_items
-    FOR SELECT USING (true);
+-- Shop Items Policies (Public read for authenticated users)
+CREATE POLICY "Shop items are viewable by authenticated users" ON public.shop_items
+    FOR SELECT TO authenticated USING (true);
 
 -- Inventory Policies
 CREATE POLICY "Users can read their own inventory" ON public.inventory
     FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can toggle equip in their own inventory" ON public.inventory
-    FOR UPDATE USING (auth.uid() = user_id);
 
 -- 5. SEED DATA
 
--- Insert Badges
+-- Insert Badges (9 Streak Progression Ranks)
 INSERT INTO public.badges (slug, name, required_streak, gold_reward, aura_reward, description, order_index)
 VALUES 
     ('clown', 'Clown', 0, 0, 0, 'Standing around doing nothing. Total clown behavior.', 1),
@@ -185,7 +182,7 @@ ON CONFLICT (slug) DO UPDATE SET
     description = EXCLUDED.description,
     order_index = EXCLUDED.order_index;
 
--- Insert Shop Items
+-- Insert Shop Items (8 Vanity Items)
 INSERT INTO public.shop_items (slug, name, description, category, price, rarity, icon_name)
 VALUES
     ('legendary-water-bottle', 'Legendary Water Bottle', 'Electrolytes distilled in the mountains of discipline. Boosts hydration.', 'Cosmetic', 100, 'Common', 'Droplets'),
@@ -204,7 +201,7 @@ ON CONFLICT (slug) DO UPDATE SET
     rarity = EXCLUDED.rarity,
     icon_name = EXCLUDED.icon_name;
 
--- 6. HELPER FUNCTIONS & RPC PROCEDURES
+-- 6. HELPER FUNCTIONS & HARDENED RPC PROCEDURES
 
 -- Calculate Level from Total XP: Level N -> N+1 requires round(100 * N^1.5)
 CREATE OR REPLACE FUNCTION public.calculate_level(p_total_xp BIGINT)
@@ -233,9 +230,10 @@ BEGIN
         v_level := v_level + 1;
     END LOOP;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp;
 
 -- Trigger to auto-create Profile and Character on auth.users sign-up
+-- Initial attributes strictly set to 0
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -247,8 +245,11 @@ BEGIN
     VALUES (NEW.id, v_name, NEW.raw_user_meta_data->>'avatar_url')
     ON CONFLICT (id) DO NOTHING;
 
-    INSERT INTO public.characters (user_id, total_xp, gold, aura, current_streak, longest_streak)
-    VALUES (NEW.id, 0, 50, 0, 0, 0)
+    INSERT INTO public.characters (
+        user_id, total_xp, gold, aura, current_streak, longest_streak,
+        intelligence, strength, discipline, creativity
+    )
+    VALUES (NEW.id, 0, 50, 0, 0, 0, 0, 0, 0, 0)
     ON CONFLICT (user_id) DO NOTHING;
 
     -- Award starter Clown badge
@@ -258,14 +259,14 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- RPC: Complete Quest (Atomic progression mutation)
+-- RPC: Complete Quest (Hardened Atomic progression mutation)
 CREATE OR REPLACE FUNCTION public.complete_quest(p_quest_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -287,11 +288,12 @@ DECLARE
     v_bonus_gold INT := 0;
     v_bonus_aura INT := 0;
 BEGIN
+    -- 1. Strictly verify authenticated identity
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthenticated request';
     END IF;
 
-    -- 1. Fetch and lock quest
+    -- 2. Fetch and lock quest, verifying ownership inside RPC
     SELECT * INTO v_quest FROM public.quests
     WHERE id = p_quest_id AND user_id = v_user_id
     FOR UPDATE;
@@ -300,11 +302,12 @@ BEGIN
         RAISE EXCEPTION 'Quest not found or access denied';
     END IF;
 
+    -- 3. Prevent duplicate completion
     IF v_quest.completed THEN
         RAISE EXCEPTION 'Quest has already been conquered';
     END IF;
 
-    -- 2. Fetch and lock character
+    -- 4. Fetch and lock character
     SELECT * INTO v_char FROM public.characters
     WHERE user_id = v_user_id
     FOR UPDATE;
@@ -313,7 +316,7 @@ BEGIN
         RAISE EXCEPTION 'Character data not found';
     END IF;
 
-    -- 3. Calculate deterministic rewards based on difficulty
+    -- 5. Calculate deterministic rewards strictly server-side based on difficulty
     CASE v_quest.difficulty
         WHEN 'Easy' THEN
             v_xp_gain := 50;
@@ -338,7 +341,7 @@ BEGIN
             v_attr_gain := 5;
     END CASE;
 
-    -- 4. Calculate Level before and after
+    -- 6. Calculate Level before and after
     SELECT level INTO v_old_level FROM public.calculate_level(v_char.total_xp);
     SELECT level INTO v_new_level FROM public.calculate_level(v_char.total_xp + v_xp_gain);
 
@@ -347,7 +350,7 @@ BEGIN
         v_aura_gain := v_aura_gain + (50 * (v_new_level - v_old_level));
     END IF;
 
-    -- 5. Calculate streak logic
+    -- 7. Calculate streak logic (same-day vs consecutive vs reset)
     IF v_char.last_activity_date IS NULL THEN
         v_new_streak := 1;
     ELSIF v_char.last_activity_date = v_today THEN
@@ -361,7 +364,7 @@ BEGIN
 
     v_new_longest := GREATEST(v_char.longest_streak, v_new_streak);
 
-    -- 6. Check eligible badges based on streak
+    -- 8. Check eligible streak badges
     FOR v_badge IN 
         SELECT * FROM public.badges 
         WHERE required_streak <= v_new_streak 
@@ -377,7 +380,7 @@ BEGIN
         v_new_badges := array_append(v_new_badges, v_badge.slug);
     END LOOP;
 
-    -- 7. Update character progression
+    -- 9. Update character progression
     UPDATE public.characters
     SET 
         total_xp = total_xp + v_xp_gain,
@@ -393,18 +396,18 @@ BEGIN
         updated_at = now()
     WHERE user_id = v_user_id;
 
-    -- 8. Mark quest completed
+    -- 10. Mark quest completed
     UPDATE public.quests
     SET 
         completed = TRUE,
         completed_at = now()
     WHERE id = p_quest_id;
 
-    -- 9. Insert quest completion record
+    -- 11. Insert quest completion record
     INSERT INTO public.quest_completions (user_id, quest_id, xp_earned, gold_earned, attribute_name, attribute_points)
     VALUES (v_user_id, p_quest_id, v_xp_gain, v_gold_gain, v_quest.category, v_attr_gain);
 
-    -- 10. Return result
+    -- 12. Return result
     RETURN jsonb_build_object(
         'success', TRUE,
         'quest_id', p_quest_id,
@@ -423,9 +426,9 @@ BEGIN
         'unlocked_badges', v_new_badges
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
--- RPC: Purchase Shop Item (Atomic Gold deduction & Inventory check)
+-- RPC: Purchase Shop Item (Hardened Atomic Gold deduction & Inventory check)
 CREATE OR REPLACE FUNCTION public.purchase_shop_item(p_item_slug TEXT)
 RETURNS JSONB AS $$
 DECLARE
@@ -435,6 +438,11 @@ DECLARE
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthenticated request';
+    END IF;
+
+    -- Validate input
+    IF p_item_slug IS NULL OR length(trim(p_item_slug)) = 0 THEN
+        RAISE EXCEPTION 'Invalid item slug';
     END IF;
 
     -- Fetch item
@@ -476,9 +484,9 @@ BEGIN
         'remaining_gold', v_char.gold - v_item.price
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
--- RPC: Equip/Unequip Inventory Item
+-- RPC: Equip/Unequip Inventory Item (Hardened)
 CREATE OR REPLACE FUNCTION public.toggle_equip_item(p_item_slug TEXT)
 RETURNS JSONB AS $$
 DECLARE
@@ -489,6 +497,10 @@ DECLARE
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthenticated request';
+    END IF;
+
+    IF p_item_slug IS NULL OR length(trim(p_item_slug)) = 0 THEN
+        RAISE EXCEPTION 'Invalid item slug';
     END IF;
 
     SELECT * INTO v_inv FROM public.inventory 
@@ -524,4 +536,17 @@ BEGIN
         'is_equipped', v_new_state
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+-- 7. FUNCTION GRANTS (RESTRICT EXECUTE TO AUTHENTICATED USERS ONLY)
+REVOKE ALL ON FUNCTION public.complete_quest(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.complete_quest(UUID) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.purchase_shop_item(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.purchase_shop_item(TEXT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.toggle_equip_item(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.toggle_equip_item(TEXT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.calculate_level(BIGINT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.calculate_level(BIGINT) TO authenticated;
