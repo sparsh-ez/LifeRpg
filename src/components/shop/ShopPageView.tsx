@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { ShopItem, Character } from '@/types/rpg';
 import { ShopItemCard } from '@/components/shop/ShopItemCard';
-import { Coins, Sparkles, CheckCircle2, Shield } from 'lucide-react';
+import { Coins, Sparkles, CheckCircle2, Shield, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 interface ShopPageViewProps {
@@ -17,28 +17,8 @@ export function ShopPageView({
 }: ShopPageViewProps) {
   const [character, setCharacter] = useState<Character>(initialCharacter);
   const [items, setItems] = useState<ShopItem[]>(initialItems);
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
-
-  const refreshShopState = async () => {
-    try {
-      const [charRes, itemsRes] = await Promise.all([
-        fetch('/api/character'),
-        fetch('/api/badges'), // Or custom shop fetch
-      ]);
-      if (charRes.ok) {
-        const charData = await charRes.json();
-        setCharacter(charData.character);
-      }
-      // Re-fetch shop items
-      const shopRes = await fetch('/api/shop/items');
-      if (shopRes.ok) {
-        const shopData = await shopRes.json();
-        setItems(shopData.items);
-      }
-    } catch {
-      // Fallback
-    }
-  };
 
   const handlePurchase = async (itemSlug: string) => {
     const res = await fetch('/api/shop/purchase', {
@@ -62,57 +42,84 @@ export function ShopPageView({
     );
 
     const purchased = items.find((i) => i.slug === itemSlug);
-    setPurchaseSuccess(`Acquired ${purchased?.name || 'Item'}! Added to your Inventory.`);
+    setPurchaseSuccess(`Acquired ${purchased?.name || 'Item'}! Added to your Armory.`);
     setTimeout(() => setPurchaseSuccess(null), 4000);
   };
 
   const ownedCount = items.filter((i) => i.is_owned).length;
 
+  const filteredItems = items.filter((item) => {
+    if (selectedCategory === 'ALL') return true;
+    return item.category === selectedCategory;
+  });
+
   return (
     <div className="space-y-8">
       {/* Header & Balance Card */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[#272B32]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">
-            The Reward Shop
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-            Exchange your hard-earned Gold for vanity titles, avatar frames, and legendary bragging rights.
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl sm:text-4xl font-heading font-black text-[#F2F2F0] tracking-tight">
+              ARMORY EMPORIUM
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-[#16191F] text-[#E5B54F] border border-[#272B32]">
+              {items.length} GEAR
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-[#8B9099]">
+            Exchange hard-earned Gold for vanity titles, avatar frames, aura flairs, and bragging rights.
           </p>
         </div>
 
         {/* Gold Balance Chip */}
-        <div className="flex items-center gap-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl px-5 py-3 shadow-lg">
+        <div className="flex items-center gap-4 bg-[#101216] border border-[#272B32] rounded-2xl px-5 py-3 shadow-lg">
           <div>
-            <div className="text-[10px] font-mono uppercase text-neutral-400 font-bold">Your Balance</div>
-            <div className="text-xl font-black font-mono text-amber-300 flex items-center gap-1.5">
-              <Coins className="w-5 h-5 text-amber-400" />
-              {character.gold.toLocaleString()} <span className="text-xs font-normal text-neutral-500">Gold</span>
+            <div className="text-[10px] font-mono uppercase text-[#8B9099] font-bold">Your Treasury</div>
+            <div className="text-xl font-heading font-black text-[#E5B54F] flex items-center gap-1.5">
+              <Coins className="w-5 h-5 text-[#E5B54F]" />
+              {character.gold.toLocaleString()} <span className="text-xs font-normal text-[#8B9099]">Gold</span>
             </div>
           </div>
-          <div className="h-8 w-px bg-neutral-800 mx-1" />
+          <div className="h-8 w-px bg-[#272B32] mx-1" />
           <Link
-            href="/inventory"
-            className="text-xs font-bold text-lime-400 hover:underline flex items-center gap-1"
+            href="/character?tab=inventory"
+            className="text-xs font-bold text-[#C8FF3D] hover:underline flex items-center gap-1 font-mono"
           >
-            Inventory ({ownedCount}) &rarr;
+            Armory ({ownedCount}) <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </div>
 
       {purchaseSuccess && (
-        <div className="p-4 rounded-2xl bg-lime-500/10 border border-lime-500/30 text-lime-400 text-sm font-bold flex items-center gap-2 animate-in fade-in duration-200">
-          <CheckCircle2 className="w-5 h-5" />
+        <div className="p-4 rounded-xl bg-[#16191F] border border-[#C8FF3D]/40 text-[#C8FF3D] text-xs font-mono font-bold flex items-center gap-2 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-4 h-4 text-[#C8FF3D]" />
           <span>{purchaseSuccess}</span>
-          <Link href="/inventory" className="ml-auto underline text-xs">
-            View in Inventory
+          <Link href="/character?tab=inventory" className="ml-auto underline text-xs">
+            Equip in Character Sheet
           </Link>
         </div>
       )}
 
+      {/* Category Tabs */}
+      <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+        {['ALL', 'Title', 'Avatar Frame', 'Aura', 'Flair', 'Cosmetic'].map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+              selectedCategory === cat
+                ? 'bg-[#C8FF3D] text-[#08090B]'
+                : 'bg-[#101216] border border-[#272B32] text-[#8B9099] hover:text-[#F2F2F0]'
+            }`}
+          >
+            {cat.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
       {/* Catalog Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {items.map((item) => (
+        {filteredItems.map((item) => (
           <ShopItemCard
             key={item.slug}
             item={item}

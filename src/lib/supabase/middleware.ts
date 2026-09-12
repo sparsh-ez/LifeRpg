@@ -42,9 +42,23 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const protectedRoutes = ['/dashboard', '/quests', '/badges', '/shop', '/inventory'];
+  const protectedRoutes = ['/dashboard', '/quests', '/groups', '/character', '/shop', '/badges', '/inventory'];
   const isProtected = protectedRoutes.some((route) => pathname.startsWith(route));
   const isAuthRoute = pathname === '/login' || pathname === '/signup';
+
+  // Legacy tab redirects: Badges and Inventory belong inside Character
+  if (pathname === '/badges') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/character';
+    url.searchParams.set('tab', 'badges');
+    return NextResponse.redirect(url);
+  }
+  if (pathname === '/inventory') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/character';
+    url.searchParams.set('tab', 'inventory');
+    return NextResponse.redirect(url);
+  }
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone();

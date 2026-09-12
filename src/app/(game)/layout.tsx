@@ -18,14 +18,15 @@ export default async function GameLayout({
   const character = await RpgService.getCharacter(user.id);
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-neutral-100 flex flex-col selection:bg-lime-500 selection:text-black">
+    <div className="min-h-screen bg-[#08090B] text-[#F2F2F0] flex flex-col selection:bg-[#C8FF3D] selection:text-black relative overflow-x-hidden">
       <GameHeader
         level={character.level}
         gold={character.gold}
         aura={character.aura}
+        streak={character.current_streak}
         displayName={user.display_name}
       />
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-24 md:pb-8 relative z-10">
         {children}
       </main>
     </div>

@@ -1,42 +1,88 @@
 @import "tailwindcss";
 
 :root {
-  --background: #090a0f;
-  --foreground: #f3f4f6;
+  --background: #08090b;
+  --foreground: #f2f2f0;
+  
+  --surface-base: #101216;
+  --surface-elevated: #16191f;
+  --border-subtle: #272b32;
+  
+  --text-primary: #f2f2f0;
+  --text-secondary: #8b9099;
+  --text-muted: #555b65;
+
+  --accent-lime: #c8ff3d;
+  --color-xp: #c8ff3d;
+  --color-gold: #f59e0b;
+  --color-aura: #a855f7;
+  --color-streak: #f97316;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface-base: var(--surface-base);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border-subtle: var(--border-subtle);
+  --color-accent-lime: var(--accent-lime);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
 }
 
-/* Custom subtle dark scrollbar */
+/* Custom Display Font Class */
+.font-display {
+  font-family: var(--font-outfit), var(--font-inter), sans-serif;
+}
+
+/* Subtle dark scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #090a0f;
+  background: #08090b;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #272b32;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #3f444e;
 }
 
 /* Accessible focus ring */
 :focus-visible {
-  outline: 2px solid #a3e635;
+  outline: 2px solid #c8ff3d;
   outline-offset: 2px;
+}
+
+/* Restrained glassmorphism surface */
+.glass-panel {
+  background: rgba(16, 18, 22, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #272b32;
+}
+
+.glass-panel-elevated {
+  background: rgba(22, 25, 31, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid #272b32;
+}
+
+/* Subtle Atmospheric Background Noise */
+.bg-mesh-dark {
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(200, 255, 61, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 100% 50%, rgba(168, 85, 247, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 0% 100%, rgba(245, 158, 11, 0.02) 0%, transparent 40%);
 }

@@ -11,13 +11,12 @@ import {
   Volume2,
   VolumeX,
   LogOut,
-  Menu,
-  X,
-  CheckSquare,
-  Award,
-  ShoppingBag,
-  Package,
   LayoutDashboard,
+  CheckSquare,
+  Users,
+  User,
+  ShoppingBag,
+  Flame,
 } from 'lucide-react';
 import { toggleAudioMute, isAudioMuted } from '@/lib/audio/sfx';
 
@@ -25,6 +24,7 @@ interface GameHeaderProps {
   level?: number;
   gold?: number;
   aura?: number;
+  streak?: number;
   displayName?: string;
 }
 
@@ -32,11 +32,11 @@ export function GameHeader({
   level = 1,
   gold = 0,
   aura = 0,
+  streak = 0,
   displayName = 'Adventurer',
 }: GameHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -56,146 +56,145 @@ export function GameHeader({
     }
   };
 
+  // Locked to exact 5 primary destinations
   const navItems = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Quests', href: '/quests', icon: CheckSquare },
-    { label: 'Badges', href: '/badges', icon: Award },
+    { label: 'Groups', href: '/groups', icon: Users },
+    { label: 'Character', href: '/character', icon: User },
     { label: 'Shop', href: '/shop', icon: ShoppingBag },
-    { label: 'Inventory', href: '/inventory', icon: Package },
   ];
 
+  const isNavActive = (href: string) => {
+    if (href === '/dashboard') return pathname === '/dashboard';
+    return pathname.startsWith(href);
+  };
+
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-neutral-800 bg-neutral-950/80 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Logo & Brand */}
-        <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-lime-500/15 border border-lime-500/40 flex items-center justify-center text-lime-400 group-hover:scale-105 transition-transform shadow-[0_0_15px_rgba(163,230,53,0.2)]">
-              <Shield className="w-5 h-5 fill-lime-500/20" />
+    <>
+      {/* Top Desktop Navigation Bar */}
+      <header className="sticky top-0 z-40 w-full border-b border-[#272B32] bg-[#08090B]/85 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-15 flex items-center justify-between gap-4">
+          {/* Brand Logo */}
+          <div className="flex items-center gap-8">
+            <Link href="/dashboard" className="flex items-center gap-2.5 group">
+              <div className="w-8.5 h-8.5 rounded-xl bg-[#C8FF3D]/10 border border-[#C8FF3D]/30 flex items-center justify-center text-[#C8FF3D] group-hover:scale-105 transition-transform shadow-[0_0_12px_rgba(200,255,61,0.2)]">
+                <Shield className="w-4.5 h-4.5 fill-[#C8FF3D]/20" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-black tracking-tight text-[#F2F2F0] uppercase font-display flex items-center gap-1">
+                  Life <span className="text-[#C8FF3D]">RPG</span>
+                </span>
+                <span className="text-[9px] font-mono tracking-wider text-[#8B9099] -mt-1 hidden sm:block">
+                  Level The Grind
+                </span>
+              </div>
+            </Link>
+
+            {/* Desktop Navigation Links */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = isNavActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all ${
+                      active
+                        ? 'bg-[#16191F] text-[#C8FF3D] border border-[#272B32] shadow-sm'
+                        : 'text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#101216]'
+                    }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#C8FF3D]' : 'text-[#8B9099]'}`} />
+                    <span>{item.label}</span>
+                    {active && (
+                      <span className="w-1 h-1 rounded-full bg-[#C8FF3D] shadow-[0_0_6px_#C8FF3D]" />
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Status Indicators & Utility Controls */}
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
+            {/* Level Badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#16191F] border border-[#272B32] text-[#C8FF3D] font-mono text-xs font-bold">
+              <Zap className="w-3.5 h-3.5 fill-[#C8FF3D]/30" />
+              <span>LVL {level}</span>
             </div>
-            <div>
-              <span className="text-base font-black tracking-tight text-white uppercase flex items-center gap-1">
-                Life <span className="text-lime-400">RPG</span>
-              </span>
-              <span className="hidden sm:block text-[9px] font-mono uppercase tracking-widest text-neutral-400 -mt-1">
-                The Grindset Quest
-              </span>
+
+            {/* Streak Counter */}
+            {streak > 0 && (
+              <div className="hidden xs:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F97316]/10 border border-[#F97316]/30 text-[#F97316] font-mono text-xs font-bold">
+                <Flame className="w-3.5 h-3.5 fill-[#F97316]/30" />
+                <span>{streak}d</span>
+              </div>
+            )}
+
+            {/* Gold Counter */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#F59E0B] font-mono text-xs font-bold">
+              <Coins className="w-3.5 h-3.5" />
+              <span>{gold.toLocaleString()}</span>
             </div>
-          </Link>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide transition-all ${
-                    isActive
-                      ? 'bg-neutral-800 text-lime-400 shadow-sm border border-neutral-700'
-                      : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+            {/* Aura Counter */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#A855F7]/10 border border-[#A855F7]/30 text-[#A855F7] font-mono text-xs font-bold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{aura.toLocaleString()}</span>
+            </div>
 
-        {/* Status Counters & Controls */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          {/* Level Pill */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-lime-500/10 border border-lime-500/30 text-lime-400 font-mono text-xs font-bold">
-            <Zap className="w-3.5 h-3.5 fill-lime-400/30" />
-            LVL {level}
-          </div>
+            {/* Audio Toggle */}
+            <button
+              type="button"
+              onClick={handleMuteToggle}
+              className="p-1.5 rounded-lg text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors cursor-pointer border border-transparent hover:border-[#272B32]"
+              aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
+              title={muted ? 'Unmute Audio Effects' : 'Mute Audio Effects'}
+            >
+              {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-[#8B9099]" />}
+            </button>
 
-          {/* Gold Balance */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-xs font-bold">
-            <Coins className="w-3.5 h-3.5 text-amber-400" />
-            {gold.toLocaleString()}
-          </div>
-
-          {/* Aura Balance */}
-          <div className="hidden xs:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-mono text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            {aura.toLocaleString()}
-          </div>
-
-          {/* Mute Audio Button */}
-          <button
-            type="button"
-            onClick={handleMuteToggle}
-            className="p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors focus:outline-none focus:ring-2 focus:ring-lime-500 cursor-pointer"
-            aria-label={muted ? 'Unmute Sound' : 'Mute Sound'}
-            title={muted ? 'Unmute audio effects' : 'Mute audio effects'}
-          >
-            {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-neutral-300" />}
-          </button>
-
-          {/* Logout Button */}
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="hidden sm:inline-flex items-center gap-1.5 p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-neutral-800 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer text-xs"
-            aria-label="Log Out"
-            title="Log out of character"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-
-          {/* Mobile menu hamburger */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-lime-500 cursor-pointer"
-            aria-label="Toggle mobile menu"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile Drawer Navigation */}
-      {mobileMenuOpen && (
-        <div className="md:hidden border-b border-neutral-800 bg-neutral-950 px-4 py-3 space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-bold transition-all ${
-                  isActive
-                    ? 'bg-neutral-800 text-lime-400'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-
-          <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
-            <span>Hero: {displayName}</span>
+            {/* Logout Button */}
             <button
               type="button"
               onClick={handleLogout}
-              className="text-rose-400 font-bold hover:underline flex items-center gap-1"
+              disabled={loggingOut}
+              className="p-1.5 rounded-lg text-[#8B9099] hover:text-rose-400 hover:bg-[#16191F] transition-colors cursor-pointer border border-transparent hover:border-[#272B32]"
+              aria-label="Log Out"
+              title="Log Out of Life RPG"
             >
-              <LogOut className="w-3.5 h-3.5" /> Log Out
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
-      )}
-    </header>
+      </header>
+
+      {/* Mobile Intentional Bottom Navigation Dock */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#101216]/95 backdrop-blur-xl border-t border-[#272B32] px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = isNavActive(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-all ${
+                active ? 'text-[#C8FF3D]' : 'text-[#8B9099] hover:text-[#F2F2F0]'
+              }`}
+            >
+              <div className="relative">
+                <Icon className="w-5 h-5" />
+                {active && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#C8FF3D] shadow-[0_0_8px_#C8FF3D]" />
+                )}
+              </div>
+              <span className="text-[10px] font-bold tracking-tight font-display">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }
