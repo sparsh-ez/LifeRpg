@@ -1,4 +1,5 @@
 import { createClient as createServerSupabase } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   Character,
   Quest,
@@ -16,50 +17,67 @@ import { SHOP_CATALOG } from '@/lib/rpg/shop';
 export class RpgService {
   /**
    * Get Character progression (Authoritative from Supabase PostgreSQL)
+   * The characters table is client read-only; no client-side INSERT/UPDATE is performed.
    */
   static async getCharacter(userId: string): Promise<Character> {
     const supabase = await createServerSupabase();
-    
-    // Fetch character
+
+    // 1. Fetch character
     let { data, error } = await supabase
       .from('characters')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
-    // If character does not exist yet (e.g. trigger delay or direct insertion needed), initialize
-    if (!data || error) {
-      const { data: newChar, error: insertError } = await supabase
-        .from('characters')
-        .insert({
-          user_id: userId,
-          total_xp: 0,
-          gold: 50,
-          aura: 0,
-          current_streak: 0,
-          longest_streak: 0,
-          intelligence: 0,
-          strength: 0,
-          discipline: 0,
-          creativity: 0,
-          equipped_title: 'Novice Adventurer',
-          equipped_badge: 'clown',
-          equipped_avatar_frame: 'none',
-        })
-        .select()
-        .single();
+    if (error) {
+      throw new Error(`Failed to load character: ${error.message}`);
+    }
 
-      if (insertError) {
-        throw new Error(`Failed to load character: ${insertError.message}`);
+    // 2. If character record does not exist (e.g. user created before schema.sql was installed)
+    if (!data) {
+      // Attempt server-side initialization via trusted SECURITY DEFINER RPC
+      const { data: rpcData, error: rpcError } = await supabase.rpc('ensure_character');
+      if (!rpcError && rpcData) {
+        data = rpcData;
+      } else {
+        // Fallback: If service role key is configured in backend environment
+        const adminClient = createAdminClient();
+        if (adminClient) {
+          const { data: adminChar } = await adminClient
+            .from('characters')
+            .upsert({
+              user_id: userId,
+              total_xp: 0,
+              gold: 50,
+              aura: 0,
+              current_streak: 0,
+              longest_streak: 0,
+              intelligence: 0,
+              strength: 0,
+              discipline: 0,
+              creativity: 0,
+              equipped_title: 'Novice Adventurer',
+              equipped_badge: 'clown',
+              equipped_avatar_frame: 'none',
+            })
+            .select()
+            .single();
+
+          await adminClient
+            .from('user_badges')
+            .upsert({ user_id: userId, badge_slug: 'clown' });
+
+          if (adminChar) {
+            data = adminChar;
+          }
+        }
       }
+    }
 
-      // Ensure starter Clown badge exists
-      await supabase
-        .from('user_badges')
-        .insert({ user_id: userId, badge_slug: 'clown' })
-        .maybeSingle();
-
-      data = newChar;
+    if (!data) {
+      throw new Error(
+        'Character profile not initialized. Please ensure the handle_new_user trigger or backfill SQL has been executed in Supabase.'
+      );
     }
 
     const progress = calculateLevelProgress(Number(data.total_xp));

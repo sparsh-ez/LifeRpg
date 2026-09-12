@@ -108,36 +108,41 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Desired Flow: Profile & Character Creation in Database
-    try {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        display_name: cleanDisplayName,
-        avatar_url: null,
-      });
+    // 4. Server-Side Profile & Character Creation
+    // (Handled automatically by public.handle_new_user() trigger in PostgreSQL;
+    // adminClient is also used if service-role key is provided)
+    const adminClient = createAdminClient();
+    if (adminClient) {
+      try {
+        await adminClient.from('profiles').upsert({
+          id: data.user.id,
+          display_name: cleanDisplayName,
+          avatar_url: null,
+        });
 
-      await supabase.from('characters').upsert({
-        user_id: data.user.id,
-        total_xp: 0,
-        gold: 50,
-        aura: 0,
-        current_streak: 0,
-        longest_streak: 0,
-        intelligence: 0,
-        strength: 0,
-        discipline: 0,
-        creativity: 0,
-        equipped_title: 'Novice Adventurer',
-        equipped_badge: 'clown',
-        equipped_avatar_frame: 'none',
-      });
+        await adminClient.from('characters').upsert({
+          user_id: data.user.id,
+          total_xp: 0,
+          gold: 50,
+          aura: 0,
+          current_streak: 0,
+          longest_streak: 0,
+          intelligence: 0,
+          strength: 0,
+          discipline: 0,
+          creativity: 0,
+          equipped_title: 'Novice Adventurer',
+          equipped_badge: 'clown',
+          equipped_avatar_frame: 'none',
+        });
 
-      await supabase.from('user_badges').upsert({
-        user_id: data.user.id,
-        badge_slug: 'clown',
-      });
-    } catch (dbErr) {
-      console.warn('Profile/character upsert error:', dbErr);
+        await adminClient.from('user_badges').upsert({
+          user_id: data.user.id,
+          badge_slug: 'clown',
+        });
+      } catch (adminErr) {
+        console.warn('Admin profile/character upsert error:', adminErr);
+      }
     }
 
     // 5. Establish session cookies

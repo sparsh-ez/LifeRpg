@@ -325,6 +325,57 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- RPC: Ensure Character Exists (Idempotent self-heal for existing/backfilled users)
+CREATE OR REPLACE FUNCTION public.ensure_character()
+RETURNS public.characters AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_char public.characters;
+    v_name TEXT;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Unauthenticated request';
+    END IF;
+
+    -- Return existing character if already initialized
+    SELECT * INTO v_char FROM public.characters WHERE user_id = v_user_id;
+    IF FOUND THEN
+        RETURN v_char;
+    END IF;
+
+    -- Ensure profile exists
+    SELECT COALESCE(raw_user_meta_data->>'full_name', raw_user_meta_data->>'display_name', split_part(email, '@', 1), 'Adventurer')
+    INTO v_name
+    FROM auth.users
+    WHERE id = v_user_id;
+
+    INSERT INTO public.profiles (id, display_name, avatar_url)
+    VALUES (v_user_id, COALESCE(v_name, 'Adventurer'), NULL)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- Initialize character with strictly 0 base attributes and 50 starter gold
+    INSERT INTO public.characters (
+        user_id, total_xp, gold, aura, current_streak, longest_streak,
+        intelligence, strength, discipline, creativity,
+        equipped_title, equipped_badge, equipped_avatar_frame
+    )
+    VALUES (
+        v_user_id, 0, 50, 0, 0, 0,
+        0, 0, 0, 0,
+        'Novice Adventurer', 'clown', 'none'
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+
+    -- Award starter clown badge
+    INSERT INTO public.user_badges (user_id, badge_slug)
+    VALUES (v_user_id, 'clown')
+    ON CONFLICT (user_id, badge_slug) DO NOTHING;
+
+    SELECT * INTO v_char FROM public.characters WHERE user_id = v_user_id;
+    RETURN v_char;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- RPC: Complete Quest (Hardened Atomic progression mutation)
 CREATE OR REPLACE FUNCTION public.complete_quest(p_quest_id UUID)
 RETURNS JSONB AS $$
@@ -615,3 +666,6 @@ GRANT EXECUTE ON FUNCTION public.toggle_equip_item(TEXT) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.calculate_level(BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_level(BIGINT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.ensure_character() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.ensure_character() TO authenticated;
