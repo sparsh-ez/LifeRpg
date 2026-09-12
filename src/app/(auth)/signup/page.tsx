@@ -24,22 +24,37 @@ export default function SignupPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          email: email.trim(),
           password,
           displayName: displayName.trim() || undefined,
         }),
       });
-      const data = await res.json();
+
+      let data: { error?: string; success?: boolean } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // Response was not JSON
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to create account');
+        const errorMsg =
+          data.error ||
+          (res.status === 400
+            ? 'Invalid signup data. Please check your email and password.'
+            : `Server error (${res.status}): Unable to complete signup. Please verify database connectivity.`);
+        throw new Error(errorMsg);
       }
 
       router.push('/dashboard');
       router.refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Signup error';
-      setError(message);
+      if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+        setError('Network error: Unable to reach the Life RPG server. Please verify the dev server is active.');
+      } else {
+        const message = err instanceof Error ? err.message : 'An unexpected signup error occurred.';
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }

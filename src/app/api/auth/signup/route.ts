@@ -3,41 +3,155 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
   try {
-    const { email, password, displayName } = await request.json();
+    const body = await request.json().catch(() => null);
 
-    if (!email || !password) {
+    if (!body) {
       return NextResponse.json(
-        { error: 'Email and password are required' },
+        { error: 'Invalid request body. JSON payload expected.' },
+        { status: 400 }
+      );
+    }
+
+    const { email, password, displayName } = body;
+
+    // 1. Input Validation
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return NextResponse.json(
+        { error: 'A valid email address is required.' },
+        { status: 400 }
+      );
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return NextResponse.json(
+        { error: 'Please enter a valid email address (e.g. hero@liferpg.app).' },
+        { status: 400 }
+      );
+    }
+
+    if (!password || typeof password !== 'string') {
+      return NextResponse.json(
+        { error: 'Password is required.' },
         { status: 400 }
       );
     }
 
     if (password.length < 6) {
       return NextResponse.json(
-        { error: 'Password must be at least 6 characters long' },
+        { error: 'Password must be at least 6 characters long.' },
         { status: 400 }
       );
     }
 
+    // 2. Validate Supabase Configuration
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      return NextResponse.json(
+        {
+          error:
+            'Supabase project credentials not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local to your active Supabase project.',
+        },
+        { status: 503 }
+      );
+    }
+
+    // 3. Authenticate with Supabase Auth
     const supabase = await createClient();
+    const cleanDisplayName = displayName?.trim() || email.split('@')[0];
+
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim().toLowerCase(),
       password,
       options: {
         data: {
-          display_name: displayName || email.split('@')[0],
-          full_name: displayName || email.split('@')[0],
+          display_name: cleanDisplayName,
+          full_name: cleanDisplayName,
         },
       },
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      // Diagnostic check for network / connectivity failures
+      if (
+        error.message?.toLowerCase().includes('fetch failed') ||
+        error.name === 'AuthRetryableFetchError'
+      ) {
+        return NextResponse.json(
+          {
+            error: `Unable to connect to Supabase Auth at ${supabaseUrl}. Please verify network connectivity and that your Supabase project is active.`,
+          },
+          { status: 503 }
+        );
+      }
+
+      // Upstream Supabase Auth rejection (e.g. duplicate user, invalid email)
+      const statusCode = (error as { status?: number }).status || 400;
+      return NextResponse.json({ error: error.message }, { status: statusCode });
     }
 
-    return NextResponse.json({ success: true, user: data.user });
+    if (!data.user) {
+      return NextResponse.json(
+        { error: 'User registration failed. No user record returned by Supabase.' },
+        { status: 500 }
+      );
+    }
+
+    // 4. Desired Flow: Profile & Character Creation in Database
+    try {
+      // Create or ensure profile exists
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        display_name: cleanDisplayName,
+        avatar_url: null,
+      });
+
+      // Create or ensure character exists with initial attributes = 0
+      await supabase.from('characters').upsert({
+        user_id: data.user.id,
+        total_xp: 0,
+        gold: 50, // Welcome Starter Gold
+        aura: 0,
+        current_streak: 0,
+        longest_streak: 0,
+        intelligence: 0,
+        strength: 0,
+        discipline: 0,
+        creativity: 0,
+        equipped_title: 'Novice Adventurer',
+        equipped_badge: 'clown',
+        equipped_avatar_frame: 'none',
+      });
+
+      // Award starter Clown badge
+      await supabase.from('user_badges').upsert({
+        user_id: data.user.id,
+        badge_slug: 'clown',
+      });
+    } catch (dbErr) {
+      console.warn('Profile/character upsert error (handled by DB trigger if present):', dbErr);
+    }
+
+    // 5. If session was not automatically established (e.g. email confirm setting), attempt sign in
+    if (!data.session) {
+      try {
+        await supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+      } catch {
+        // Session creation handled on redirect
+      }
+    }
+
+    return NextResponse.json(
+      { success: true, user: data.user },
+      { status: 201 }
+    );
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Signup failed';
+    const message = err instanceof Error ? err.message : 'Internal signup failure';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

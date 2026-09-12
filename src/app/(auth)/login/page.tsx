@@ -21,19 +21,34 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
-      const data = await res.json();
+
+      let data: { error?: string; success?: boolean } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // Not JSON
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to login');
+        const errorMsg =
+          data.error ||
+          (res.status === 401
+            ? 'Invalid email or password. Please try again.'
+            : `Server error (${res.status}): Unable to authenticate.`);
+        throw new Error(errorMsg);
       }
 
       router.push('/dashboard');
       router.refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Invalid credentials';
-      setError(message);
+      if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+        setError('Network error: Unable to reach the Life RPG server. Please verify the dev server is active.');
+      } else {
+        const message = err instanceof Error ? err.message : 'Invalid credentials';
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
