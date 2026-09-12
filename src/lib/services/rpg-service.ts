@@ -938,5 +938,87 @@ export class RpgService {
       rank: idx + 1,
     }));
   }
+
+  /**
+   * Get Recent Completed Quests for Activity Feed (Real database completions)
+   */
+  static async getRecentCompletions(userId: string): Promise<
+    Array<{
+      id: string;
+      quest_title: string;
+      xp_earned: number;
+      gold_earned: number;
+      attribute_name: string;
+      completed_at: string;
+    }>
+  > {
+    const supabase = await createServerSupabase();
+    const { data, error } = await supabase
+      .from('quest_completions')
+      .select('id, xp_earned, gold_earned, attribute_name, completed_at, quests(title)')
+      .eq('user_id', userId)
+      .order('completed_at', { ascending: false })
+      .limit(6);
+
+    if (error || !data) {
+      return [];
+    }
+
+    return data.map((d: any) => ({
+      id: d.id,
+      quest_title: d.quests?.title || 'Quest Conquered',
+      xp_earned: d.xp_earned,
+      gold_earned: d.gold_earned,
+      attribute_name: d.attribute_name,
+      completed_at: d.completed_at,
+    }));
+  }
+
+  /**
+   * Get Weekly Metrics (Real completions and study time in the last 7 days)
+   */
+  static async getWeeklyMetrics(userId: string): Promise<{
+    questsCompleted: number;
+    xpEarned: number;
+    goldEarned: number;
+    studyHours: number;
+  }> {
+    const supabase = await createServerSupabase();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const [completionsRes, studyRes] = await Promise.all([
+      supabase
+        .from('quest_completions')
+        .select('xp_earned, gold_earned')
+        .eq('user_id', userId)
+        .gte('completed_at', sevenDaysAgo.toISOString()),
+      supabase
+        .from('study_sessions')
+        .select('duration_seconds')
+        .eq('user_id', userId)
+        .gte('created_at', sevenDaysAgo.toISOString()),
+    ]);
+
+    const comps = completionsRes.data || [];
+    const questsCompleted = comps.length;
+    const xpEarned = comps.reduce((acc, c) => acc + (c.xp_earned || 0), 0);
+    const goldEarned = comps.reduce((acc, c) => acc + (c.gold_earned || 0), 0);
+
+    const studySessions = studyRes.data || [];
+    const totalSeconds = studySessions.reduce(
+      (acc: number, s: any) => acc + (s.duration_seconds || 0),
+      0
+    );
+    const studyHours = Math.round((totalSeconds / 3600) * 10) / 10;
+
+    return {
+      questsCompleted,
+      xpEarned,
+      goldEarned,
+      studyHours,
+    };
+  }
 }
 

@@ -128,141 +128,151 @@ export function QuestCard({ quest, onConquer, onEdit, onDelete }: QuestCardProps
           ? 'border-[#272B32]/60 opacity-60 bg-[#0c0d10]'
           : showSuccessGlow
           ? 'border-[#C8FF3D] ring-2 ring-[#C8FF3D]/40 shadow-[0_0_20px_rgba(200,255,61,0.25)]'
-          : 'border-[#272B32] hover:border-[#383e49]'
+          : 'border-[#272B32] hover:border-[#383e49] hover:-translate-y-0.5'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        {/* Type, Category & Difficulty Badges */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          {/* Daily vs One-Time Tag */}
-          <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider font-bold ${
-              isDaily
-                ? 'bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/30'
-                : 'bg-[#16191F] text-[#8B9099] border border-[#272B32]'
-            }`}
-          >
-            {isDaily ? (
-              <>
-                <RotateCcw className="w-3 h-3" /> DAILY
-              </>
-            ) : (
-              <>
-                <Target className="w-3 h-3" /> ONE-TIME
-              </>
-            )}
-          </span>
-
-          <span
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold ${cat.bg} ${cat.color} border ${cat.border}`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {cat.label}
-          </span>
-
-          <span
-            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${diff.bg} ${diff.color} border ${diff.border}`}
-          >
-            {diff.label}
-          </span>
-
-          {formattedDueDate && !isDaily && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-[#8B9099] font-mono">
-              <Calendar className="w-3 h-3 text-[#555B65]" />
-              Due {formattedDueDate}
-            </span>
-          )}
-        </div>
-
-        {/* Action icons (edit/delete) for incomplete quests */}
-        {!quest.completed && (
-          <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-            {onEdit && (
-              <button
-                type="button"
-                onClick={() => onEdit(quest)}
-                className="p-1.5 rounded-lg text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors focus:outline-none focus:ring-1 focus:ring-[#C8FF3D]"
-                aria-label="Edit quest"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                onClick={() => onDelete(quest.id)}
-                className="p-1.5 rounded-lg text-[#8B9099] hover:text-rose-400 hover:bg-[#16191F] transition-colors focus:outline-none focus:ring-1 focus:ring-rose-500"
-                aria-label="Delete quest"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Quest Title & Description */}
-      <div className="mt-3">
-        <h3
-          className={`text-base sm:text-lg font-heading font-black tracking-wide text-[#F2F2F0] ${
-            quest.completed ? 'line-through text-[#555B65]' : ''
-          }`}
+      <div className="flex items-start gap-3 sm:gap-3.5">
+        {/* Category Icon */}
+        <div
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${cat.bg} ${cat.color} border ${cat.border} mt-0.5`}
         >
-          {quest.title}
-        </h3>
-        {quest.description && (
-          <p className="mt-1 text-xs sm:text-sm text-[#8B9099] line-clamp-2">
-            {quest.description}
-          </p>
-        )}
-      </div>
-
-      {/* Bottom Footer: Rewards & Conquer Button */}
-      <div className="mt-4 pt-3 border-t border-[#272B32]/80 flex flex-wrap items-center justify-between gap-3">
-        {/* Reward pills */}
-        <div className="flex items-center gap-3 font-mono text-xs">
-          <div className="flex items-center gap-1 text-[#C8FF3D] font-bold">
-            <Zap className="w-3.5 h-3.5 fill-[#C8FF3D]/20" />
-            <span>+{quest.xp_reward} XP</span>
-          </div>
-          <div className="flex items-center gap-1 text-[#E5B54F] font-bold">
-            <Coins className="w-3.5 h-3.5" />
-            <span>+{quest.gold_reward} Gold</span>
-          </div>
-          {quest.difficulty === 'Epic' && (
-            <div className="flex items-center gap-1 text-purple-400 font-bold">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>+25 Aura</span>
-            </div>
-          )}
+          <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
         </div>
 
-        {/* Conquer button or completion status */}
-        {quest.completed ? (
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#08090B] border border-[#272B32] text-[#8B9099] text-xs font-semibold">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#C8FF3D]" />
-            <span>{isDaily ? 'Completed Today (Resets 00:00 UTC)' : 'Conquered'}</span>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleConquer}
-            disabled={conquering}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C8FF3D] hover:bg-[#b5eb2f] active:scale-95 text-[#08090B] font-heading font-black text-xs uppercase tracking-wider transition-all duration-150 shadow-[0_0_15px_rgba(200,255,61,0.2)] hover:shadow-[0_0_20px_rgba(200,255,61,0.35)] focus:outline-none focus:ring-1 focus:ring-[#C8FF3D] disabled:opacity-50 cursor-pointer"
-          >
-            {conquering ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Conquering...
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Conquer
-              </>
+        {/* Quest Body */}
+        <div className="flex-1 min-w-0">
+          {/* Title Row with Edit/Delete */}
+          <div className="flex items-start justify-between gap-2">
+            <h3
+              className={`text-base sm:text-lg font-heading font-black tracking-wide text-[#F2F2F0] break-words ${
+                quest.completed ? 'line-through text-[#555B65]' : ''
+              }`}
+            >
+              {quest.title}
+            </h3>
+
+            {/* Action icons (edit/delete) for incomplete quests */}
+            {!quest.completed && (
+              <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(quest)}
+                    className="p-1.5 rounded-lg text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors cursor-pointer"
+                    aria-label="Edit quest"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(quest.id)}
+                    className="p-1.5 rounded-lg text-[#8B9099] hover:text-rose-400 hover:bg-[#16191F] transition-colors cursor-pointer"
+                    aria-label="Delete quest"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             )}
-          </button>
-        )}
+          </div>
+
+          {/* Type / Category / Difficulty Badges */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider font-bold ${
+                isDaily
+                  ? 'bg-[#C8FF3D]/10 text-[#C8FF3D] border border-[#C8FF3D]/30'
+                  : 'bg-[#16191F] text-[#8B9099] border border-[#272B32]'
+              }`}
+            >
+              {isDaily ? (
+                <>
+                  <RotateCcw className="w-3 h-3" /> DAILY
+                </>
+              ) : (
+                <>
+                  <Target className="w-3 h-3" /> ONE-TIME
+                </>
+              )}
+            </span>
+
+            <span
+              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${cat.bg} ${cat.color} border ${cat.border}`}
+            >
+              {cat.label}
+            </span>
+
+            <span
+              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${diff.bg} ${diff.color} border ${diff.border}`}
+            >
+              {diff.label}
+            </span>
+
+            {formattedDueDate && !isDaily && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-[#8B9099] font-mono">
+                <Calendar className="w-3 h-3 text-[#555B65]" />
+                Due {formattedDueDate}
+              </span>
+            )}
+          </div>
+
+          {/* Description if available */}
+          {quest.description && (
+            <p className="mt-2 text-xs sm:text-sm text-[#8B9099] line-clamp-2 leading-relaxed">
+              {quest.description}
+            </p>
+          )}
+
+          {/* Rewards & Complete Action */}
+          <div className="mt-3.5 pt-2.5 border-t border-[#272B32]/80 flex flex-wrap items-center justify-between gap-3">
+            {/* Reward pills */}
+            <div className="flex items-center gap-3 font-mono text-xs">
+              <div className="flex items-center gap-1 text-[#C8FF3D] font-bold">
+                <Zap className="w-3.5 h-3.5 fill-[#C8FF3D]/20" />
+                <span>+{quest.xp_reward} XP</span>
+              </div>
+              <div className="flex items-center gap-1 text-[#E5B54F] font-bold">
+                <Coins className="w-3.5 h-3.5" />
+                <span>+{quest.gold_reward} Gold</span>
+              </div>
+              {quest.difficulty === 'Epic' && (
+                <div className="flex items-center gap-1 text-purple-400 font-bold">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>+25 Aura</span>
+                </div>
+              )}
+            </div>
+
+            {/* Complete action */}
+            {quest.completed ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#08090B] border border-[#272B32] text-[#8B9099] text-xs font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#C8FF3D]" />
+                <span>{isDaily ? 'Completed Today' : 'Quest Conquered'}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConquer}
+                disabled={conquering}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#C8FF3D] hover:bg-[#b5eb2f] active:scale-95 text-[#08090B] font-heading font-black text-xs uppercase tracking-wider transition-all duration-150 shadow-[0_0_12px_rgba(200,255,61,0.2)] hover:shadow-[0_0_18px_rgba(200,255,61,0.35)] cursor-pointer"
+              >
+                {conquering ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Conquering...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>COMPLETE</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -26,6 +26,8 @@ interface GameHeaderProps {
   aura?: number;
   streak?: number;
   displayName?: string;
+  avatarUrl?: string | null;
+  streakRank?: string;
 }
 
 export function GameHeader({
@@ -34,11 +36,25 @@ export function GameHeader({
   aura = 0,
   streak = 0,
   displayName = 'Adventurer',
+  avatarUrl = null,
+  streakRank = 'NOOB',
 }: GameHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [muted, setMuted] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleMuteToggle = () => {
     const next = toggleAudioMute();
@@ -70,13 +86,15 @@ export function GameHeader({
     return pathname.startsWith(href);
   };
 
+  const initialLetter = (displayName || 'A').charAt(0).toUpperCase();
+
   return (
     <>
       {/* Top Desktop Navigation Bar */}
-      <header className="sticky top-0 z-40 w-full border-b border-[#272B32] bg-[#08090B]/85 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 w-full border-b border-[#272B32] bg-[#08090B]/90 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-15 flex items-center justify-between gap-4">
           {/* Brand Logo */}
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-6 lg:gap-8">
             <Link href="/dashboard" className="flex items-center gap-2.5 group">
               <div className="w-8.5 h-8.5 rounded-xl bg-[#C8FF3D]/10 border border-[#C8FF3D]/30 flex items-center justify-center text-[#C8FF3D] group-hover:scale-105 transition-transform shadow-[0_0_12px_rgba(200,255,61,0.2)]">
                 <Shield className="w-4.5 h-4.5 fill-[#C8FF3D]/20" />
@@ -117,24 +135,16 @@ export function GameHeader({
             </nav>
           </div>
 
-          {/* Status Indicators & Utility Controls */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5">
+          {/* Status Indicators & User Profile Controls */}
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Level Badge */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#16191F] border border-[#272B32] text-[#C8FF3D] font-mono text-xs font-bold">
               <Zap className="w-3.5 h-3.5 fill-[#C8FF3D]/30" />
               <span>LVL {level}</span>
             </div>
 
-            {/* Streak Counter */}
-            {streak > 0 && (
-              <div className="hidden xs:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F97316]/10 border border-[#F97316]/30 text-[#F97316] font-mono text-xs font-bold">
-                <Flame className="w-3.5 h-3.5 fill-[#F97316]/30" />
-                <span>{streak}d</span>
-              </div>
-            )}
-
             {/* Gold Counter */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#F59E0B] font-mono text-xs font-bold">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#E5B54F] font-mono text-xs font-bold">
               <Coins className="w-3.5 h-3.5" />
               <span>{gold.toLocaleString()}</span>
             </div>
@@ -156,17 +166,108 @@ export function GameHeader({
               {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-[#8B9099]" />}
             </button>
 
-            {/* Logout Button */}
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="p-1.5 rounded-lg text-[#8B9099] hover:text-rose-400 hover:bg-[#16191F] transition-colors cursor-pointer border border-transparent hover:border-[#272B32]"
-              aria-label="Log Out"
-              title="Log Out of Life RPG"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {/* User PFP & Profile Dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setProfileDropdownOpen((prev) => !prev)}
+                className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-[#16191F]/80 hover:bg-[#16191F] border border-[#272B32] hover:border-[#383e49] transition-all cursor-pointer group"
+                aria-label="User profile menu"
+                aria-expanded={profileDropdownOpen}
+              >
+                {/* User Avatar / PFP */}
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="w-7 h-7 rounded-full object-cover border border-[#C8FF3D]/40 ring-1 ring-[#C8FF3D]/20"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#1b2210] to-[#16191F] border border-[#C8FF3D]/50 flex items-center justify-center text-[11px] font-bold text-[#C8FF3D] font-mono shadow-[0_0_8px_rgba(200,255,61,0.2)]">
+                    {initialLetter}
+                  </div>
+                )}
+
+                {/* Username on Desktop */}
+                <span className="hidden sm:inline-block text-xs font-bold font-display uppercase tracking-wide text-[#F2F2F0] group-hover:text-[#C8FF3D] transition-colors max-w-[110px] truncate">
+                  {displayName}
+                </span>
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              {profileDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#101216] border border-[#272B32] shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  {/* Dropdown User Info Header */}
+                  <div className="px-3.5 py-2.5 border-b border-[#272B32] flex items-center gap-3">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt={displayName}
+                        className="w-9 h-9 rounded-full object-cover border border-[#C8FF3D]/40"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-[#16191F] border border-[#C8FF3D]/50 flex items-center justify-center text-xs font-bold text-[#C8FF3D] font-mono">
+                        {initialLetter}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black uppercase tracking-wide font-display text-[#F2F2F0] truncate">
+                        {displayName}
+                      </div>
+                      <div className="text-[10px] font-mono font-bold text-[#8B9099] flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[#C8FF3D]">LEVEL {level}</span>
+                        <span>•</span>
+                        <span className="text-[#FF5A36] uppercase">{streakRank}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dropdown Navigation Destinations */}
+                  <div className="py-1">
+                    <Link
+                      href="/character"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors"
+                    >
+                      <User className="w-4 h-4 text-[#C8FF3D]" />
+                      <span>Character Sheet</span>
+                    </Link>
+                    <Link
+                      href="/groups"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors"
+                    >
+                      <Users className="w-4 h-4 text-[#C8FF3D]" />
+                      <span>Squads & Groups</span>
+                    </Link>
+                    <Link
+                      href="/shop"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-[#8B9099] hover:text-[#F2F2F0] hover:bg-[#16191F] transition-colors"
+                    >
+                      <ShoppingBag className="w-4 h-4 text-[#E5B54F]" />
+                      <span>Armory & Shop</span>
+                    </Link>
+                  </div>
+
+                  {/* Logout Action */}
+                  <div className="pt-1 border-t border-[#272B32]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        handleLogout();
+                      }}
+                      disabled={loggingOut}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>{loggingOut ? 'Logging out...' : 'Log Out'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

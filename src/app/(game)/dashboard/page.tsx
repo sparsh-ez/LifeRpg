@@ -11,9 +11,12 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const [character, quests] = await Promise.all([
+  const [character, quests, groups, recentActivity, weeklyMetrics] = await Promise.all([
     RpgService.getCharacter(user.id),
     RpgService.getQuests(user.id),
+    RpgService.getGroups(user.id),
+    RpgService.getRecentCompletions(user.id),
+    RpgService.getWeeklyMetrics(user.id),
   ]);
 
   return (
@@ -21,6 +24,10 @@ export default async function DashboardPage() {
       initialUser={user}
       initialCharacter={character}
       initialQuests={quests}
+      initialGroups={groups}
+      initialRecentActivity={recentActivity}
+      initialWeeklyMetrics={weeklyMetrics}
     />
   );
 }
+
