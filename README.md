@@ -2,131 +2,254 @@
 
 > **Stop tracking your life. Start leveling it.**
 
-Life RPG is a premium dark RPG productivity and party-progression platform that transforms real-world goals and daily rituals into server-authoritative RPG progression. 
+**LifeRPG** is an RPG productivity platform that turns real-world goals, habits, and group activities into an immediate progression system.
 
-The aesthetic is **80% serious dark RPG + 20% restrained grindset humor**. Conquer real-world tasks to gain non-linear XP, level up, cultivate four core attributes (Intelligence, Strength, Discipline, Creativity), earn Gold, build streaks, evolve through 9 streak ranks, form squads, and grind in synchronized Study Rooms.
+Instead of simply checking off a task, users **complete quests, earn XP and Gold, develop character attributes, build streaks, unlock ranks, and progress with specialized squads.**
 
----
+### 🔗 Live Demo
 
-## 🌟 Core Architecture & V2 Redesign Features
-
-### 1. Locked 5-Destination Navigation
-- **Dashboard** (`/dashboard`): Player command center answering *How am I progressing?*, *What should I do today?*, *What is my streak?*, and *What is my squad doing?*. Features subtle, masked dark monochrome 3D sculpture bust atmospheric artwork.
-- **Quests** (`/quests`): High-density mission board with dual-mode quests (Daily rituals vs. One-time sprints) and category filters.
-- **Groups** (`/groups` & `/groups/[groupId]`): Party hub with shared group goals, shared missions, and the dedicated Study Room.
-- **Character** (`/character`): Dedicated RPG character sheet with heroic 3D artwork, attribute growth meters, active loadout, Armory & Inventory, and the full 9-tier streak badge ladder.
-- **Shop** (`/shop`): Item emporium with category filters and tactile purchase/equip interactions.
-- **Mobile Experience**: Responsive bottom dock navigation ensuring 1-thumb accessibility without cramped desktop menus.
-
-### 2. Dual-Mode Quest Engine
-- **ONE-TIME SPRINT**:
-  - Discrete milestones and deliverables (e.g., *Submit DBMS assignment*, *Ship Auth Page*).
-  - Permanent completion with one-off progression rewards. Optional due date.
-- **DAILY RITUAL**:
-  - Recurring daily habits (e.g., *Study DSA 1 Hour*, *Gym Workout*, *Read 20 Pages*).
-  - Server-authoritative completion history: completed today, automatically available again tomorrow at 00:00 UTC.
-  - Streak protection: multiple completions cannot artificially inflate player streaks on the same day.
-
-### 3. Cooperative Party System & Study Room
-- **Squad Specializations**: `STUDY`, `FITNESS`, `PROJECT`, and `OTHER`.
-- **Dedicated Study Room (Study Groups)**:
-  - Live authoritative focus timer with subject tagging (e.g., *DSA Grind*, *DBMS Normalization*).
-  - 1 minute of qualifying study = 1 Group XP (minimum 10m session, capped at 120m).
-  - Live presence roster: 🟢 Studying now, 🟡 Break, ⚪ Offline.
-  - Weekly study grind leaderboard within the squad.
-- **Separate Personal vs. Group Progression**:
-  - Personal level and attributes belong strictly to the player.
-  - Group XP levels up squad identity, banners, and rank prestige.
-  - Server-authoritative **300 Group XP per member per day** contribution cap to prevent party runaway.
-
-### 4. Deterministic Non-Linear Progression Math
-- **Personal XP Curve**:
-  $$\text{XP}(N \to N+1) = \text{round}(100 \times N^{1.5})$$
-- **Group XP Curve**:
-  $$\text{Group XP}(N \to N+1) = \text{round}(500 \times N^{1.5})$$
-- **Cumulative XP**: Database stores total lifetime XP; level and progress percent are derived deterministically without resetting on level-up.
-
-### 5. 9-Tier Streak Rank Ladder
-1. `Clown` (0+ days)
-2. `Noob` (1+ day) — *+25 Gold*
-3. `Novice` (3+ days) — *+50 Gold, +25 Aura*
-4. `Average` (7+ days) — *+100 Gold, +50 Aura*
-5. `Advanced` (15+ days) — *+200 Gold, +100 Aura*
-6. `Sigma` (30+ days) — *+300 Gold, +150 Aura*
-7. `Chad` (45+ days) — *+500 Gold, +250 Aura*
-8. `Absolute Chad` (60+ days) — *+1000 Gold, +500 Aura*
-9. `Giga Chad` (120+ days) — *+2500 Gold, +1000 Aura*
+**[Play LifeRPG](https://life-rpg-psi-liart.vercel.app/)**
 
 ---
 
-## 🎨 Global Visual Design System
+## 🎮 The Core Idea
 
-- **Background**: `#08090B` (deep near-black obsidian)
-- **Surface**: `#101216`
-- **Elevated Surface**: `#16191F`
-- **Subtle Borders**: `#272B32` (1px clean outlines)
-- **Primary Progression Accent**: `#C8FF3D` (electric lime/acid accent)
-- **Semantic Accents**:
-  - XP: `#C8FF3D`
-  - Gold: `#E5B54F` (warm gold)
-  - Aura: `#A855F7` (violet)
-  - Streak: `#FF5A36` (orange/red flame)
-- **Typography**:
-  - **Headings & RPG Numerals**: `Outfit` (display, heavy weights)
-  - **Body & Controls**: `Inter` (crisp modern sans-serif)
+Traditional productivity apps tell you:
 
----
+> "Task completed."
 
-## 🛠 Tech Stack
+LifeRPG tells you:
 
-- **Framework**: [Next.js 16+ (App Router with Turbopack)](https://nextjs.org/)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL with Row Level Security and SECURITY DEFINER RPCs)
-- **Audio Engine**: Procedural Web Audio API sound synthesis
+> **QUEST CONQUERED**  
+> +175 XP · +75 Gold · +15 Intelligence
+
+The goal is to close the gap between **real-world effort** and **immediate feedback**.
+
+Every completed activity contributes to a persistent RPG character.
 
 ---
 
-## 🚀 Getting Started
+# 🚀 MVP Features
 
-### 1. Prerequisites
-- Node.js 18+ or 20+
-- A Supabase project with PostgreSQL
+## ⚔️ 1. Real-World Quests
 
-### 2. Environment Setup
-Create a `.env.local` file from `.env.example`:
+Turn everyday responsibilities into RPG quests.
 
-```bash
-cp .env.example .env.local
-```
+### One-Time Quests
+For discrete goals and milestones:
 
-Configure your Supabase credentials:
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+- Submit an assignment
+- Ship a feature
+- Finish a project
+- Complete an important deliverable
 
-### 3. Database Migration
-In your Supabase Dashboard:
-1. Navigate to **SQL Editor**.
-2. Run [`supabase/schema.sql`](file:///c:/Users/shish/Desktop/LifeRpg/supabase/schema.sql) (if fresh setup) or [`supabase/migration_v2_redesign.sql`](file:///c:/Users/shish/Desktop/LifeRpg/supabase/migration_v2_redesign.sql) for the V2 party/daily quest additions.
-3. The migration adds:
-   - `quest_type` and `due_date` columns to `quests`.
-   - `groups`, `group_members`, `group_quests`, `group_quest_contributions`, `study_sessions`, and `group_goals` tables.
-   - Server-authoritative RPCs: `complete_quest` (with daily reset support), `complete_group_quest`, `start_study_session`, `end_study_session`, and `join_group_by_invite`.
-   - Strict Row Level Security (RLS) policies and least-privilege `GRANT` statements.
+### Daily Rituals
+For recurring activities:
 
-### 4. Running Locally
-```bash
-npm install
-npm run dev
-```
+- Study DSA
+- Go to the gym
+- Read
+- Practice coding
 
-Open [http://localhost:3000](http://localhost:3000) to enter Life RPG.
+Daily quests automatically become available again on the next day while maintaining historical completion data.
 
-### 5. Production Build
-```bash
-npm run build
-npm start
-```
+---
+
+## 🧬 2. Character Progression
+
+Every quest contributes to the player's RPG character.
+
+### Four Core Attributes
+
+| Attribute | Example Activities |
+|---|---|
+| 🧠 Intelligence | Studying, coding, problem solving |
+| 💪 Strength | Gym, workouts, fitness |
+| 🛡️ Discipline | Daily routines and consistency |
+| 🎨 Creativity | Creative and building activities |
+
+Completing quests provides:
+
+- XP
+- Gold
+- Attribute progression
+- Aura
+- Streak progression
+
+---
+
+## 📈 3. Non-Linear Leveling
+
+LifeRPG uses a deterministic non-linear progression curve:
+
+`XP(N → N+1) = round(100 × N^1.5)`
+
+As the player's level increases, progressively more XP is required to advance.
+
+This makes progression feel closer to an RPG than a conventional points-based productivity tracker.
+
+---
+
+# 👥 4. Specialized Squads
+
+LifeRPG extends progression beyond the individual.
+
+Users can form specialized squads around what they are actually trying to accomplish.
+
+### 📚 Study Squads
+
+Built for students and study groups.
+
+Members can:
+
+- Enter a shared Study Room
+- Run synchronized focus sessions
+- Track study time
+- Contribute Group XP
+- See who is currently studying
+- Compete on the squad leaderboard
+- Work toward shared goals
+
+### 🏋️ Fitness / Gym Squads
+
+Built around collective fitness and consistency.
+
+Members can:
+
+- Create shared fitness goals
+- Complete group quests
+- Contribute toward squad progression
+- Track collective activity
+- Compete through group progression
+
+### 💻 Project Squads
+
+For teams building something together.
+
+Members can turn project milestones into shared quests and collectively progress their squad.
+
+### Squad Progression
+
+Personal progression and squad progression are intentionally separate:
+
+**Personal XP → Character Level**
+
+**Group XP → Squad Level & Prestige**
+
+This prevents group activity from artificially replacing individual progression.
+
+---
+
+# ⏱️ 5. Study Grinder
+
+The Study Room is the dedicated focus system for Study Squads.
+
+A member starts a study session, selects what they are working on, and contributes qualifying study time toward the squad.
+
+The system provides:
+
+- Authoritative focus sessions
+- Subject tagging
+- Live squad presence
+- Study-time tracking
+- Group XP
+- Weekly leaderboard
+- Shared group goals
+
+Study sessions are persisted on the backend rather than being simulated entirely in the browser.
+
+---
+
+# 🔥 6. Streak → Rank Progression
+
+Consistency has its own progression system.
+
+| Streak | Rank |
+|---:|---|
+| 0+ | Clown |
+| 1+ | Noob |
+| 3+ | Novice |
+| 7+ | Average |
+| 15+ | Advanced |
+| 30+ | Sigma |
+| 45+ | Chad |
+| 60+ | Absolute Chad |
+| 120+ | Giga Chad |
+
+The naming is deliberate.
+
+Rather than using generic Bronze/Silver/Gold tiers, LifeRPG uses familiar internet-native terminology to make progression immediately recognizable to its target audience.
+
+The intent is to transform a simple productivity metric into **identity + progression + immediate feedback**.
+
+---
+
+# 🪙 7. RPG Economy
+
+Completing quests earns **Gold**, which can be spent in the in-game Shop.
+
+Players can unlock and equip:
+
+- Titles
+- Badges
+- Avatar frames
+- Cosmetic items
+- Other progression rewards
+
+The economy gives completed real-world actions a tangible virtual consequence.
+
+---
+
+# 🔐 8. Real Backend — Not a Frontend Prototype
+
+LifeRPG is backed by:
+
+- **Next.js**
+- **TypeScript**
+- **Supabase**
+- **PostgreSQL**
+- **Row Level Security**
+- **Server-authoritative RPCs**
+
+User progression, quests, completion history, inventory, groups, and study sessions are persisted in the database.
+
+Quest rewards and progression are calculated server-side rather than trusting arbitrary client-provided XP or Gold values.
+
+Users can only access data they are authorized to access.
+
+---
+
+# ⚡ Technical Highlights
+
+- Secure authentication and session persistence
+- User-scoped PostgreSQL data
+- Row Level Security
+- Server-authoritative quest completion
+- Deterministic non-linear progression
+- Historical quest completion tracking
+- Daily quest reset logic
+- Streak calculation
+- Badge/rank progression
+- Atomic reward handling
+- Quest recommit/reward reversal
+- Persistent inventory and equipment
+- Group-specific progression
+- Realtime squad synchronization
+- Persistent Study Room sessions
+- Responsive mobile navigation
+- Keyboard-accessible interactions
+- Tactile UI feedback and Web Audio effects
+
+---
+
+# 🛠 Tech Stack
+
+- **Framework:** Next.js 16+ / App Router
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Database:** PostgreSQL
+- **Backend & Auth:** Supabase
+- **Security:** PostgreSQL RLS + SECURITY DEFINER RPCs
+- **Realtime:** Supabase Realtime
+- **Audio:** Web Audio API
+- **Deployment:** Vercel
